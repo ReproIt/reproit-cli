@@ -1,0 +1,17 @@
+[package]
+name = "reproit-app"
+description = "Shared Repro It developer application operations"
+edition.workspace = true
+license.workspace = true
+rust-version = "1.94.0"
+version.workspace = true
+publish = false
+
+[dependencies]
+reproit-core.workspace = true
+reproit-cloud-api.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

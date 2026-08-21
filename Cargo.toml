@@ -1,0 +1,48 @@
+[workspace]
+members = [
+    "crates/reproit-app",
+    "crates/reproit-cli",
+]
+resolver = "3"
+
+[workspace.package]
+edition = "2024"
+license = "Apache-2.0"
+rust-version = "1.88.0"
+version = "1.0.0"
+
+[workspace.dependencies]
+base64 = { version = "=0.23.1", default-features = false, features = ["std"] }
+clap = { version = "=4.6.6", features = ["derive"] }
+getrandom = "=0.4.3"
+hex = "=0.4.3"
+hkdf = "=0.13.0"
+hmac = "=0.13.0"
+hyper = { version = "=1.11.0", default-features = false, features = ["http1", "server"] }
+keyring = "=4.1.6"
+oauth2 = { version = "=5.0.0", default-features = false }
+reqwest = { version = "=0.13.4", default-features = false, features = ["form", "http2", "json", "query", "rustls", "stream", "system-proxy"] }
+secrecy = "=0.10.3"
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.151"
+sha2 = "=0.11.0"
+tempfile = "=3.27.0"
+time = { version = "=0.3.55", default-features = false, features = ["formatting", "parsing", "serde", "std"] }
+tokio = { version = "=1.53.1", default-features = false, features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+toml = "=1.1.4"
+
+reproit-backend = { git = "https://github.com/ReproIt/reproit-core", rev = "76cccb924ee2717388c70487d7d09486664fe148" }
+reproit-cloud-api = { git = "https://github.com/ReproIt/reproit-core", rev = "76cccb924ee2717388c70487d7d09486664fe148" }
+reproit-core = { git = "https://github.com/ReproIt/reproit-core", rev = "76cccb924ee2717388c70487d7d09486664fe148" }
+reproit-worker = { git = "https://github.com/ReproIt/reproit-core", rev = "76cccb924ee2717388c70487d7d09486664fe148" }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
