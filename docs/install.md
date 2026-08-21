@@ -1,6 +1,9 @@
 # Install Repro It
 
-Use an official release bundle for normal use. Use a source build only for CLI development.
+Use this guide to install `reproit` on Linux, macOS, or Windows.
+
+Use the signed release bundle supplied for your Repro It organization. Use a source build only for
+CLI development.
 
 ## Verify a release bundle
 

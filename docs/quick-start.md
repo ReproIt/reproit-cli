@@ -1,67 +1,53 @@
-# Reproduce and fix a bug
+# Fix a production bug
 
-This procedure starts after you have a Repro It account and a backend application in a Git
-repository.
+Use this guide with a Repro It account and a backend application in Git.
 
-## 1. Connect the repository
+## 1. Connect the application
 
-Run the commands from the repository root:
+Run these commands from the repository root:
 
 ```sh
 reproit login
 reproit init
 ```
 
-Answer the short `init` questions. Select one service, one SDK, the service path, and the normal
-application run command. Review the `.reproit/project.toml` change before you accept it.
+Select the service, SDK, service path, and application command. Review the
+`.reproit/project.toml` change. Then follow the printed SDK installation steps.
 
-Follow the printed SDK instructions. The SDK API is framework-neutral. Optional framework adapters
-call the same API.
+## 2. Deploy capture
 
-## 2. Deploy the normal application
+Add the SDK operation boundary to the application. Store `REPROIT_MANAGED_PROJECT_TOKEN` in the
+deployment secret store. Deploy the application with the normal release process.
 
-Build and deploy the application as you normally do. The SDK records only operations that your
-application handles. A capture error or service outage must not change application behavior.
+Trigger the production bug. Repro It shows the Failure only after it verifies an exact replay.
 
-Successful operations are not uploaded. An incomplete failure stops before a Cloud request.
-
-## 3. Find the Repro
-
-After managed Repro It verifies the Failure, list open Repros:
+## 3. Reproduce the Failure
 
 ```sh
 reproit list
-```
-
-Copy the short Repro ID from the output.
-
-## 4. Reproduce and inspect the Failure
-
-```sh
 reproit debug <id>
 ```
 
-The command starts an isolated replay of the captured subject and World. It prints a random local
-endpoint and the standard debugger client to use. Attach the debugger, then press Enter in the
-terminal that runs `reproit debug`.
+`list` shows the Repro ID. `debug` starts an isolated replay and shows the debugger client and local
+connection address.
 
-The debugger endpoint accepts one connection. It closes when the command ends.
+Attach the debugger. Press Enter in the `reproit debug` terminal when you finish.
 
-## 5. Test the fix
+## 4. Test the fix
 
-Change the source in your checkout, then run:
+Change the source. Then run:
 
 ```sh
 reproit check <id>
 ```
 
-- `PASS` means that the captured Failure is absent with the changed source.
+- `PASS` means that the captured Failure is absent.
 - `REGRESSION` means that the captured Failure still occurs.
 - `ERROR` means that Repro It could not produce an exact result.
 
-Do not treat `ERROR` as a pass.
+Treat `ERROR` as an unresolved check.
 
-## 6. Keep the regression check
+## 5. Keep the check
 
 After the fix passes, run:
 
@@ -71,19 +57,10 @@ git add .reproit/repros/<id>.toml
 git commit
 ```
 
-The tracked file is a managed reference. It does not contain the captured World, credentials, or
-customer data.
-
-Run every tracked check with:
+Run all tracked Repros with:
 
 ```sh
 reproit check
 ```
 
-Remove a tracked reference with:
-
-```sh
-reproit remove <id>
-```
-
-This removes only the local tracked reference. It does not delete Cloud history.
+Remove one tracked reference with `reproit remove <id>`. This action keeps the Cloud history.

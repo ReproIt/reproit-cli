@@ -1,42 +1,27 @@
 # Repro It CLI
 
-Use the Repro It CLI to reproduce a production bug, inspect it with a standard debugger, test a
-fix, and keep the bug as a regression check.
-
-The CLI connects to managed Repro It. It does not contain Cloud, Runtime, admission, or worker
-service code. [Repro It Core](https://github.com/ReproIt/reproit-core) owns the shared contracts.
-This repository pins one exact Core revision in `core-pin.json`.
+Use this CLI to reproduce a production bug, test a fix, and keep a regression check.
 
 ## Install
 
-Install the signed `reproit` executable for your operating system from a Repro It release bundle.
-The bundle includes a checksum manifest. Verify the checksum before you install the executable.
+Install the signed `reproit` executable from your Repro It release bundle. Verify its checksum
+before you run it.
 
-For source builds, install Git and the Rust toolchain from `rust-toolchain.toml`, then run:
+See [Install Repro It](docs/install.md) for Linux, macOS, Windows, and source-build instructions.
 
-```sh
-cargo install --locked --path crates/reproit-cli
-reproit --version
-```
+## Connect an application
 
-Source builds are for development. Official release builds contain the production OAuth metadata.
-An unbound source build fails closed when you run `reproit login`.
-
-See [Install Repro It](docs/install.md) for Linux, macOS, and Windows instructions.
-
-## Start
-
-Run these commands from the Git repository for your application:
+Run these commands in the Git repository for your application:
 
 ```sh
 reproit login
 reproit init
 ```
 
-`reproit init` selects one managed service and one SDK. It writes the reviewed project binding to
-`.reproit/project.toml` and prints the SDK setup for your application.
+`reproit init` connects one service and SDK. It writes `.reproit/project.toml` and prints the exact
+SDK installation steps.
 
-After your application captures a failed operation, use this loop:
+## Fix a captured bug
 
 ```sh
 reproit list
@@ -46,36 +31,21 @@ reproit keep <id>
 reproit check
 ```
 
-`debug` reproduces the captured Failure and prints a loopback debugger endpoint. `check <id>` runs
-the changed source. It prints `PASS` when the captured Failure is absent and `REGRESSION` when the
-Failure returns. `keep` writes a tracked managed reference. A later `reproit check` runs every
-tracked reference.
+| Command | Result |
+| --- | --- |
+| `list` | Show verified Repros that need work. |
+| `debug <id>` | Reproduce the Failure and show the debugger connection. |
+| `check <id>` | Test the current source against one Repro. |
+| `keep <id>` | Add the passing Repro to the repository. |
+| `check` | Run all tracked Repros. |
 
-Read the [quick start](docs/quick-start.md) for the complete developer loop. Read the
-[command reference](docs/commands.md) for command behavior and exit codes.
+`PASS` means that the captured Failure is absent. `REGRESSION` means that it still occurs. `ERROR`
+means that Repro It could not produce an exact result.
 
-## Public commands
+Read the [quick start](docs/quick-start.md) for the full bug-fix loop. Use the
+[command reference](docs/commands.md) for options and exit codes.
 
-- `reproit login`
-- `reproit init`
-- `reproit list`
-- `reproit triage <id>`
-- `reproit debug <id>`
-- `reproit check <id>`
-- `reproit check`
-- `reproit keep <id>`
-- `reproit remove <id>`
-
-The v1.0 CLI does not include MCP, private Runtime, customer OCI storage, or customer worker
-commands.
-
-## SDKs
-
-Use the framework-neutral Rust, Python, Go, Node.js, or .NET SDK from
-[reproit-sdk](https://github.com/ReproIt/reproit-sdk). The SDK works in a host process or a
-container. It does not require a sidecar, container engine, orchestrator, or container socket.
-
-## Develop
+## Develop the CLI
 
 Run the complete repository check:
 
@@ -83,7 +53,4 @@ Run the complete repository check:
 ./tools/test.sh
 ```
 
-The script fetches the exact Core revision into the ignored `.core` directory. No dependency is
-vendored in this repository.
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) before you change public behavior.
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before you change public command behavior.

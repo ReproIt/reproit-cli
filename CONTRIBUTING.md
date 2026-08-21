@@ -1,6 +1,6 @@
 # Contributing
 
-Keep each change on the managed Backend v1.0 developer loop.
+Use this guide when you change the managed Backend v1.0 developer loop.
 
 ## Before you change code
 

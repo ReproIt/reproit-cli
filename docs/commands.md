@@ -1,26 +1,27 @@
 # Command reference
 
+Use these commands from an application repository.
+
 ## `reproit login`
 
-Starts browser login with authorization code, PKCE S256, state validation, and a loopback callback.
-The CLI stores the resulting session in the native credential store. The command never prints the
-session token.
+Sign in through the browser. The CLI stores the session in the native credential store.
 
 ## `reproit init`
 
-Connects the current Git repository to one managed service and SDK. Interactive mode asks only for
-missing choices. Non-interactive mode uses the same operation:
+Connect the current repository to one service and SDK. The command writes
+`.reproit/project.toml` and prints the SDK setup.
+
+Run it again to change the current setup. The command shows the file change before it writes it.
+
+For an agent or script, use:
 
 ```sh
 reproit init --non-interactive --service NAME --sdk rust --service-path . -- COMMAND ARGUMENT
 ```
 
-Run `reproit init` again to edit an existing project binding. The command shows the tracked-file
-change and asks for one confirmation.
-
 ## `reproit list`
 
-Lists open managed Repros by default.
+Show open Repros by default.
 
 ```sh
 reproit list
@@ -32,39 +33,34 @@ reproit list --assignee USER
 
 ## `reproit triage <id>`
 
-Changes priority, assignment, or workflow state. Resolving a Repro first runs the changed source and
-requires `PASS`.
+Change the priority, assignment, or workflow state. Resolving a Repro requires a passing check.
 
 ## `reproit debug <id>`
 
-Runs the captured subject and World in an isolated replay. It prints a random loopback endpoint and
-the compatible debugger client. The debugger capability is never printed or sent to the standard
-debugger client.
+Reproduce the captured Failure in an isolated replay. The command shows the debugger client and a
+random local connection address.
 
 ## `reproit check <id>`
 
-Runs one Repro against the current source. The command uses an exact compatible replay host. It does
-not use processor translation.
+Run one Repro against the current source. The result is `PASS`, `REGRESSION`, or `ERROR`.
 
 ## `reproit check`
 
-Runs every tracked managed reference. The command reports every finished result and then prints
-totals.
+Run all tracked Repros. The command reports each result and final totals.
 
 ## `reproit keep <id>`
 
-Checks the changed source, creates an immutable managed reference, and writes it under
-`.reproit/repros/`.
+Check the current source. After `PASS`, write a tracked reference under `.reproit/repros/`.
 
 ## `reproit remove <id>`
 
-Removes the tracked reference from the current repository. It does not delete the Repro from Cloud.
+Remove the tracked reference from the current repository. Keep the Repro and its Cloud history.
 
 ## Exit codes
 
-- `0` means that the command succeeded. For `check`, every evaluated Repro passed.
+- `0` means that the command succeeded. For `check`, all evaluated Repros passed.
 - `1` means that `check` found a regression.
 - `2` means that the command could not produce a valid result.
 
-Use `--details` for a stable error code and bounded technical facts. It does not change the command,
-result, or exit code.
+Use `--details` to show a stable error code and bounded technical facts. The option keeps the same
+result and exit code.
