@@ -763,89 +763,47 @@ fn render_sdk_setup(sdk: BackendSdk) -> Result<(), Error> {
     stdout_line(format_args!(
         "Do not put the token in .reproit/project.toml."
     ))?;
-    stdout_line(format_args!("Read its value at process startup."))?;
-    stdout_line(format_args!("{}", sdk_token_setup(sdk)))?;
+    stdout_line(format_args!(
+        "The SDK reads the token only after it captures a complete Failure."
+    ))?;
     stdout_line(format_args!("{}", sdk_operation_setup(sdk)))?;
     stdout_line(format_args!(
-        "Use the base operation API when no matching adapter exists."
-    ))?;
-    stdout_line(format_args!(
-        "Use the same setup in a host process or OCI container."
+        "Use the same package and operation API in a host process or OCI container."
     ))?;
     stdout_line(format_args!("Do not add a sidecar or container socket."))
 }
 
 const fn sdk_install_lines(sdk: BackendSdk) -> &'static [&'static str] {
     match sdk {
-        BackendSdk::Dotnet => &[concat!(
-            "dotnet add package ReproIt.Sdk --version 1.0.0 ",
-            "--source <release-directory>"
-        )],
-        BackendSdk::Go => &[
-            concat!(
-                "unzip <release-directory>/reproit.dev-sdk-go-v1.0.0.zip ",
-                "-d <sdk-directory>"
-            ),
-            "go mod edit -require=reproit.dev/sdk-go@v1.0.0",
-            concat!(
-                "go mod edit -replace=reproit.dev/sdk-go=",
-                "<sdk-directory>/reproit.dev/sdk-go@v1.0.0"
-            ),
-        ],
-        BackendSdk::Nodejs => &["npm install <release-directory>/reproit-sdk-1.0.0.tgz"],
-        BackendSdk::Python => &[concat!(
-            "python -m pip install ",
-            "<release-directory>/reproit_sdk-1.0.0-py3-none-any.whl"
-        )],
+        BackendSdk::Dotnet => &["dotnet add package ReproIt.Sdk --version 1.0.0"],
+        BackendSdk::Go => &["go get reproit.dev/sdk-go@v1.0.0"],
+        BackendSdk::Nodejs => &["npm install @reproit/sdk@1.0.0"],
+        BackendSdk::Python => &["python -m pip install reproit-sdk==1.0.0"],
         BackendSdk::Rust => &["cargo add reproit-sdk-rust@1.0.0"],
-    }
-}
-
-const fn sdk_token_setup(sdk: BackendSdk) -> &'static str {
-    match sdk {
-        BackendSdk::Dotnet => {
-            concat!(
-                "Pass it to new ReproIt.Sdk.ManagedProjectToken(token) ",
-                "when you create the managed SDK client."
-            )
-        }
-        BackendSdk::Go => {
-            concat!(
-                "Pass it to reproit.NewManagedProjectToken(token) ",
-                "when you create the managed SDK client."
-            )
-        }
-        BackendSdk::Nodejs => {
-            "Pass it to new ManagedProjectToken(token) when you create the managed SDK client."
-        }
-        BackendSdk::Python => {
-            concat!(
-                "Pass it to reproit_sdk.managed_transport.ManagedProjectToken(token) ",
-                "when you create the managed SDK client."
-            )
-        }
-        BackendSdk::Rust => {
-            concat!(
-                "The official Axum adapter reads it after a Failure. Return ",
-                "reproit_sdk_rust::ManagedProjectToken::new(token) from the token callback ",
-                "for another operation boundary."
-            )
-        }
     }
 }
 
 const fn sdk_operation_setup(sdk: BackendSdk) -> &'static str {
     match sdk {
-        BackendSdk::Dotnet => "Wrap each top-level operation with ReproIt.Sdk.Operations.Run.",
-        BackendSdk::Go => "Wrap each top-level operation with reproit.RunOperation.",
-        BackendSdk::Nodejs => "Wrap each top-level operation with runOperation.",
-        BackendSdk::Python => "Wrap each top-level operation with reproit_sdk.run_operation.",
-        BackendSdk::Rust => concat!(
-            "Create OfficialManagedProject::from_build from the reviewed project file, build ",
-            "repository identity, and immutable source revision. For Axum, add ",
-            "reproit-sdk-rust-axum and configure OfficialAxumRequestCapture. Use ",
-            "OfficialManagedRustOperation for another top-level operation boundary."
+        BackendSdk::Dotnet => concat!(
+            "Create ReproItCapture once. Call capture.RunAsync in ASP.NET Core middleware or ",
+            "capture.Run for another operation boundary."
         ),
+        BackendSdk::Go => concat!(
+            "Call reproit.Start once. Call capture.HTTP for net/http or capture.Run for another ",
+            "operation boundary."
+        ),
+        BackendSdk::Nodejs => concat!(
+            "Create ReproIt once. Call reproit.http for a request handler or reproit.run for ",
+            "another operation boundary."
+        ),
+        BackendSdk::Python => concat!(
+            "Create ReproIt once. Call reproit.asgi, reproit.wsgi, or reproit.run at each ",
+            "operation boundary."
+        ),
+        BackendSdk::Rust => {
+            "Create ReproIt::from_build once. Call ReproIt::run inside any top-level operation."
+        }
     }
 }
 

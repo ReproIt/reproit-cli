@@ -38,62 +38,37 @@ fn regression_exit_one_is_exclusive_to_check() {
 #[test]
 fn every_sdk_setup_uses_an_exact_release_and_public_boundary() {
     let cases = [
-        (
-            BackendSdk::Dotnet,
-            "ReproIt.Sdk",
-            "ManagedProjectToken",
-            "Operations.Run",
-        ),
-        (
-            BackendSdk::Go,
-            "reproit.dev/sdk-go",
-            "NewManagedProjectToken",
-            "RunOperation",
-        ),
-        (
-            BackendSdk::Nodejs,
-            "reproit-sdk-1.0.0.tgz",
-            "ManagedProjectToken",
-            "runOperation",
-        ),
-        (
-            BackendSdk::Python,
-            "reproit_sdk-1.0.0-py3-none-any.whl",
-            "ManagedProjectToken",
-            "run_operation",
-        ),
-        (
-            BackendSdk::Rust,
-            "reproit-sdk-rust@1.0.0",
-            "ManagedProjectToken::new",
-            "OfficialManagedRustOperation",
-        ),
+        (BackendSdk::Dotnet, "ReproIt.Sdk", "ReproItCapture"),
+        (BackendSdk::Go, "reproit.dev/sdk-go", "capture.Run"),
+        (BackendSdk::Nodejs, "@reproit/sdk", "reproit.run"),
+        (BackendSdk::Python, "reproit-sdk", "reproit.run"),
+        (BackendSdk::Rust, "reproit-sdk-rust", "ReproIt::run"),
     ];
-    for (sdk, package, token_api, operation_api) in cases {
+    for (sdk, package, operation_api) in cases {
         let install = sdk_install_lines(sdk).join("\n");
         assert!(install.contains(package));
         assert!(install.contains("1.0.0"));
-        assert!(sdk_token_setup(sdk).contains(token_api));
         assert!(sdk_operation_setup(sdk).contains(operation_api));
     }
     assert_eq!(MANAGED_PROJECT_TOKEN_ENV, "REPROIT_MANAGED_PROJECT_TOKEN");
-    let rust_setup = format!(
-        "{}\n{}",
-        sdk_token_setup(BackendSdk::Rust),
-        sdk_operation_setup(BackendSdk::Rust)
-    );
-    assert!(rust_setup.contains("OfficialManagedProject::from_build"));
-    for hidden_input in [
-        "endpoint",
-        "certificate",
-        "signer",
-        "key path",
-        "framework",
-        "container",
+    for sdk in [
+        BackendSdk::Dotnet,
+        BackendSdk::Go,
+        BackendSdk::Nodejs,
+        BackendSdk::Python,
+        BackendSdk::Rust,
     ] {
-        assert!(!rust_setup.contains(hidden_input));
+        let setup = sdk_operation_setup(sdk);
+        for hidden_api in [
+            "CandidateStart",
+            "ManagedProjectToken",
+            "OfficialManaged",
+            "candidate_sink",
+            "Sdk::begin",
+        ] {
+            assert!(!setup.contains(hidden_api));
+        }
     }
-    assert!(!rust_setup.contains("Sdk::begin"));
 }
 
 #[test]
