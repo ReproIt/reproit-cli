@@ -1,6 +1,6 @@
 # Repro It CLI
 
-Use this CLI to reproduce a production bug, test a fix, and keep a regression check.
+The Repro It CLI reproduces a production bug, tests a fix, and keeps a regression check.
 
 ## Install
 

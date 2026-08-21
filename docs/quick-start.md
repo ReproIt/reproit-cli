@@ -1,6 +1,6 @@
 # Fix a production bug
 
-Use this guide with a Repro It account and a backend application in Git.
+Start with a Repro It account and a backend application in Git.
 
 ## 1. Connect the application
 

@@ -753,9 +753,7 @@ fn repository_relative_path(
 }
 
 fn render_sdk_setup(sdk: BackendSdk) -> Result<(), Error> {
-    stdout_line(format_args!(
-        "Install the released SDK from a local artifact:"
-    ))?;
+    stdout_line(format_args!("Install the released SDK:"))?;
     for line in sdk_install_lines(sdk) {
         stdout_line(format_args!("{line}"))?;
     }
@@ -769,7 +767,7 @@ fn render_sdk_setup(sdk: BackendSdk) -> Result<(), Error> {
     stdout_line(format_args!("{}", sdk_token_setup(sdk)))?;
     stdout_line(format_args!("{}", sdk_operation_setup(sdk)))?;
     stdout_line(format_args!(
-        "No framework adapter is required for this operation boundary."
+        "Use the base operation API when no matching adapter exists."
     ))?;
     stdout_line(format_args!(
         "Use the same setup in a host process or OCI container."
@@ -799,14 +797,7 @@ const fn sdk_install_lines(sdk: BackendSdk) -> &'static [&'static str] {
             "python -m pip install ",
             "<release-directory>/reproit_sdk-1.0.0-py3-none-any.whl"
         )],
-        BackendSdk::Rust => &[
-            "mkdir -p <sdk-directory>/reproit-sdk-rust",
-            concat!(
-                "tar -xzf <release-directory>/reproit-sdk-rust-1.0.0.crate ",
-                "-C <sdk-directory>/reproit-sdk-rust --strip-components=1"
-            ),
-            "cargo add --path <sdk-directory>/reproit-sdk-rust",
-        ],
+        BackendSdk::Rust => &["cargo add reproit-sdk-rust@1.0.0"],
     }
 }
 
@@ -835,8 +826,9 @@ const fn sdk_token_setup(sdk: BackendSdk) -> &'static str {
         }
         BackendSdk::Rust => {
             concat!(
-                "Return reproit_sdk_rust::ManagedProjectToken::new(token) from the token ",
-                "callback for OfficialManagedRustOperation::fail."
+                "The official Axum adapter reads it after a Failure. Return ",
+                "reproit_sdk_rust::ManagedProjectToken::new(token) from the token callback ",
+                "for another operation boundary."
             )
         }
     }
@@ -850,8 +842,9 @@ const fn sdk_operation_setup(sdk: BackendSdk) -> &'static str {
         BackendSdk::Python => "Wrap each top-level operation with reproit_sdk.run_operation.",
         BackendSdk::Rust => concat!(
             "Create OfficialManagedProject::from_build from the reviewed project file, build ",
-            "repository identity, and immutable source revision. Use ",
-            "OfficialManagedRustOperation for each top-level operation."
+            "repository identity, and immutable source revision. For Axum, add ",
+            "reproit-sdk-rust-axum and configure OfficialAxumRequestCapture. Use ",
+            "OfficialManagedRustOperation for another top-level operation boundary."
         ),
     }
 }

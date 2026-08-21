@@ -1,7 +1,5 @@
 # Command reference
 
-Use these commands from an application repository.
-
 ## `reproit login`
 
 Sign in through the browser. The CLI stores the session in the native credential store.

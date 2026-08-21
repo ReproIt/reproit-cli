@@ -36,7 +36,7 @@ fn regression_exit_one_is_exclusive_to_check() {
 }
 
 #[test]
-fn every_sdk_setup_uses_local_artifacts_and_exact_public_boundaries() {
+fn every_sdk_setup_uses_an_exact_release_and_public_boundary() {
     let cases = [
         (
             BackendSdk::Dotnet,
@@ -64,7 +64,7 @@ fn every_sdk_setup_uses_local_artifacts_and_exact_public_boundaries() {
         ),
         (
             BackendSdk::Rust,
-            "reproit-sdk-rust-1.0.0.crate",
+            "reproit-sdk-rust@1.0.0",
             "ManagedProjectToken::new",
             "OfficialManagedRustOperation",
         ),
@@ -72,9 +72,7 @@ fn every_sdk_setup_uses_local_artifacts_and_exact_public_boundaries() {
     for (sdk, package, token_api, operation_api) in cases {
         let install = sdk_install_lines(sdk).join("\n");
         assert!(install.contains(package));
-        assert!(!install.contains("crates.io"));
-        assert!(!install.contains("npmjs"));
-        assert!(!install.contains("pypi"));
+        assert!(install.contains("1.0.0"));
         assert!(sdk_token_setup(sdk).contains(token_api));
         assert!(sdk_operation_setup(sdk).contains(operation_api));
     }

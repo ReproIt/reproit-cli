@@ -1,9 +1,7 @@
 # Install Repro It
 
-Use this guide to install `reproit` on Linux, macOS, or Windows.
-
-Use the signed release bundle supplied for your Repro It organization. Use a source build only for
-CLI development.
+Install `reproit` on Linux, macOS, or Windows from the signed release bundle. Use a source build
+only for CLI development.
 
 ## Verify a release bundle
 
