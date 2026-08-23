@@ -12,12 +12,13 @@ reproit init
 ```
 
 Select the service, SDK, service path, and application command. Review the
-`.reproit/project.toml` change. Then follow the printed SDK installation steps.
+`.reproit/project.toml` change. Then run the printed package command. Add the printed operation call
+at the top-level application boundary.
 
 ## 2. Deploy capture
 
-Add the SDK operation boundary to the application. Store `REPROIT_MANAGED_PROJECT_TOKEN` in the
-deployment secret store. Deploy the application with the normal release process.
+Store `REPROIT_MANAGED_PROJECT_TOKEN` in the deployment secret store. Deploy the application with
+the normal release process. The SDK loads the project file and Git revision automatically.
 
 Trigger the production bug. Repro It shows the Failure only after it verifies an exact replay.
 

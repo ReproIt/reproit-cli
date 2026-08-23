@@ -38,11 +38,11 @@ fn regression_exit_one_is_exclusive_to_check() {
 #[test]
 fn every_sdk_setup_uses_an_exact_release_and_public_boundary() {
     let cases = [
-        (BackendSdk::Dotnet, "ReproIt.Sdk", "ReproItCapture"),
-        (BackendSdk::Go, "reproit.dev/sdk-go", "capture.Run"),
-        (BackendSdk::Nodejs, "@reproit/sdk", "reproit.run"),
-        (BackendSdk::Python, "reproit-sdk", "reproit.run"),
-        (BackendSdk::Rust, "reproit-sdk-rust", "ReproIt::run"),
+        (BackendSdk::Dotnet, "ReproIt.Sdk", "capture.OperationAsync"),
+        (BackendSdk::Go, "reproit.dev/sdk-go", "reproit.Operation"),
+        (BackendSdk::Nodejs, "@reproit/sdk", "reproit.operation"),
+        (BackendSdk::Python, "reproit-sdk", "reproit.operation_async"),
+        (BackendSdk::Rust, "reproit-sdk-rust", "reproit.operation"),
     ];
     for (sdk, package, operation_api) in cases {
         let install = sdk_install_lines(sdk).join("\n");
@@ -59,10 +59,15 @@ fn every_sdk_setup_uses_an_exact_release_and_public_boundary() {
         BackendSdk::Rust,
     ] {
         let setup = sdk_operation_setup(sdk);
+        assert!(setup.contains("init") || setup.contains("Init"));
+        assert!(!setup.to_ascii_lowercase().contains("middleware"));
         for hidden_api in [
             "CandidateStart",
+            "FailureIdentity",
             "ManagedProjectToken",
+            "ManagedWorldCapture",
             "OfficialManaged",
+            "ReproIt::from_build",
             "candidate_sink",
             "Sdk::begin",
         ] {

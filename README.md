@@ -18,8 +18,9 @@ reproit login
 reproit init
 ```
 
-`reproit init` connects one service and SDK. It writes `.reproit/project.toml` and prints the exact
-SDK installation steps.
+`reproit init` connects one service and SDK. It writes `.reproit/project.toml`. It also prints the
+package install command and the framework-neutral operation call. The application does not create
+Repro It schemas or IDs.
 
 ## Fix a captured bug
 

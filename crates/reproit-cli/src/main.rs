@@ -766,11 +766,13 @@ fn render_sdk_setup(sdk: BackendSdk) -> Result<(), Error> {
     stdout_line(format_args!(
         "The SDK reads the token only after it captures a complete Failure."
     ))?;
+    stdout_line(format_args!(
+        "Initialize Repro It once. Wrap each top-level application operation:"
+    ))?;
     stdout_line(format_args!("{}", sdk_operation_setup(sdk)))?;
     stdout_line(format_args!(
-        "Use the same package and operation API in a host process or OCI container."
-    ))?;
-    stdout_line(format_args!("Do not add a sidecar or container socket."))
+        "The SDK loads .reproit/project.toml and the current Git revision."
+    ))
 }
 
 const fn sdk_install_lines(sdk: BackendSdk) -> &'static [&'static str] {
@@ -786,24 +788,30 @@ const fn sdk_install_lines(sdk: BackendSdk) -> &'static [&'static str] {
 const fn sdk_operation_setup(sdk: BackendSdk) -> &'static str {
     match sdk {
         BackendSdk::Dotnet => concat!(
-            "Create ReproItCapture once. Call capture.RunAsync in ASP.NET Core middleware or ",
-            "capture.Run for another operation boundary."
+            "ReproItCapture capture = ReproItCapture.Init();\n",
+            "Todo todo = await capture.OperationAsync(\"todos.create\", inputBytes, ",
+            "() => CreateTodo(input));"
         ),
         BackendSdk::Go => concat!(
-            "Call reproit.Start once. Call capture.HTTP for net/http or capture.Run for another ",
-            "operation boundary."
+            "capture := reproit.Init()\n",
+            "todo, err := reproit.Operation(capture, \"todos.create\", inputBytes, ",
+            "func() (Todo, error) { return createTodo(input) })"
         ),
         BackendSdk::Nodejs => concat!(
-            "Create ReproIt once. Call reproit.http for a request handler or reproit.run for ",
-            "another operation boundary."
+            "const reproit = ReproIt.init();\n",
+            "const todo = await reproit.operation(\"todos.create\", inputBytes, ",
+            "() => createTodo(input));"
         ),
         BackendSdk::Python => concat!(
-            "Create ReproIt once. Call reproit.asgi, reproit.wsgi, or reproit.run at each ",
-            "operation boundary."
+            "reproit = ReproIt.init()\n",
+            "todo = await reproit.operation_async(\"todos.create\", input_bytes, ",
+            "lambda: create_todo(input))"
         ),
-        BackendSdk::Rust => {
-            "Create ReproIt::from_build once. Call ReproIt::run inside any top-level operation."
-        }
+        BackendSdk::Rust => concat!(
+            "let reproit = ReproIt::init();\n",
+            "let todo = reproit.operation(\"todos.create\", &input_bytes, ",
+            "|| async { create_todo(input).await }).await?;"
+        ),
     }
 }
 

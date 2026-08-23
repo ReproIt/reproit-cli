@@ -7,7 +7,8 @@ Sign in through the browser. The CLI stores the session in the native credential
 ## `reproit init`
 
 Connect the current repository to one service and SDK. The command writes
-`.reproit/project.toml` and prints the SDK setup.
+`.reproit/project.toml`. It prints the package install command and the framework-neutral operation
+call.
 
 Run it again to change the current setup. The command shows the file change before it writes it.
 
