@@ -11,9 +11,11 @@ reproit login
 reproit init
 ```
 
-Select the service, SDK, service path, and application command. Review the
-`.reproit/project.toml` change. Then run the printed package command. Add the printed operation call
-at the top-level application boundary.
+Select the service, SDK, service path, and application command. Repro It checks for complete
+automatic World capture support before it writes `.reproit/project.toml`.
+
+If support is absent, `reproit init` stops without a configuration change. Install a released SDK
+with complete automatic capture before you continue.
 
 ## 2. Deploy capture
 
@@ -65,3 +67,8 @@ reproit check
 ```
 
 Remove one tracked reference with `reproit remove <id>`. This action keeps the Cloud history.
+
+## Coding agents
+
+Run `reproit mcp` to give a coding agent the same bounded operations. The MCP server uses the same
+login and authorization as the human CLI.

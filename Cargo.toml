@@ -31,10 +31,10 @@ time = { version = "=0.3.55", default-features = false, features = ["formatting"
 tokio = { version = "=1.53.1", default-features = false, features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 toml = "=1.1.4"
 
-reproit-backend = { git = "https://github.com/ReproIt/reproit-core", rev = "59888cfb6620b9a2f11018793a60bd6de7624df8" }
-reproit-cloud-api = { git = "https://github.com/ReproIt/reproit-core", rev = "59888cfb6620b9a2f11018793a60bd6de7624df8" }
-reproit-core = { git = "https://github.com/ReproIt/reproit-core", rev = "59888cfb6620b9a2f11018793a60bd6de7624df8" }
-reproit-worker = { git = "https://github.com/ReproIt/reproit-core", rev = "59888cfb6620b9a2f11018793a60bd6de7624df8" }
+reproit-backend = { git = "https://github.com/ReproIt/reproit-core", rev = "c43bd6c0347ab5ab5e5a3b2d050558cd4332b027" }
+reproit-cloud-api = { git = "https://github.com/ReproIt/reproit-core", rev = "c43bd6c0347ab5ab5e5a3b2d050558cd4332b027" }
+reproit-core = { git = "https://github.com/ReproIt/reproit-core", rev = "c43bd6c0347ab5ab5e5a3b2d050558cd4332b027" }
+reproit-worker = { git = "https://github.com/ReproIt/reproit-core", rev = "c43bd6c0347ab5ab5e5a3b2d050558cd4332b027" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

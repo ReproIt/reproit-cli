@@ -5,6 +5,7 @@ pub mod cloud;
 pub mod executor_control;
 pub mod initialization;
 mod login;
+pub mod mcp;
 pub mod render;
 mod source;
 mod source_package;

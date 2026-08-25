@@ -12,8 +12,8 @@ CLI changes must preserve the managed Backend v1.0 developer loop.
 Do not copy Core types, schemas, or vectors into this repository. Update Core first when the shared
 contract must change, then update the exact pin in one commit.
 
-Keep Cloud, Runtime, admission, worker services, customer OCI, private mode, and MCP code in their
-owning repositories.
+Keep Cloud, Runtime, admission, worker services, customer OCI, and private mode in their owning
+repositories. Keep MCP schemas in Repro It Core. Keep the MCP command adapter in this repository.
 
 ## Verify a change
 

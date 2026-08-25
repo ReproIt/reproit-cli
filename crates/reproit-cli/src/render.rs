@@ -9,6 +9,7 @@ pub enum PublicErrorContext {
     Check,
     Cloud,
     General,
+    Init,
     Login,
     Source,
 }
@@ -63,13 +64,17 @@ pub const fn public_error(
             "Repro It could not get the required source.",
             "Check your Git access, then try again.",
         ),
+        ErrorCode::UnsupportedCapabilitySet if matches!(context, PublicErrorContext::Init) => (
+            "Automatic World capture support is not installed.",
+            "Install a released SDK with complete automatic capture, then run reproit init again.",
+        ),
         ErrorCode::UnsupportedCapabilitySet => (
             "No compatible replay host is available.",
             "Use a compatible replay host.",
         ),
         ErrorCode::KeepDestinationUnavailable => (
             "Repro It could not read the kept Repro.",
-            "Check your customer storage access, then try again.",
+            "Check your connection, then try again.",
         ),
         ErrorCode::KeyProviderUnavailable | ErrorCode::KeyUnwrapFailed => (
             "Repro It could not unlock the kept Repro.",
@@ -96,8 +101,8 @@ pub const fn public_error(
             "Check your connection, then try again.",
         ),
         ErrorCode::ServiceUnavailable => (
-            "Repro It could not reach the local service.",
-            "Start Repro It Runtime, then try again.",
+            "Repro It could not reach Cloud.",
+            "Check your connection, then try again.",
         ),
         ErrorCode::DifferentFailure if matches!(context, PublicErrorContext::Check) => (
             "One or more stored bugs reproduced.",
@@ -159,5 +164,22 @@ mod tests {
         for forbidden in ["executor", "private route", "credential"] {
             assert!(!public.message.contains(forbidden));
         }
+    }
+
+    #[test]
+    fn initialization_reports_the_automatic_capture_blocker() {
+        assert_eq!(
+            public_error(
+                PublicErrorContext::Init,
+                ErrorCode::UnsupportedCapabilitySet,
+            ),
+            (
+                "Automatic World capture support is not installed.",
+                concat!(
+                    "Install a released SDK with complete automatic capture, ",
+                    "then run reproit init again."
+                )
+            )
+        );
     }
 }

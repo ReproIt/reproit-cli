@@ -1,4 +1,5 @@
 use std::{
+    io::Write as _,
     path::Path,
     process::{Command, Stdio},
 };
@@ -42,8 +43,7 @@ fn run_at(root: &Path, arguments: &[&str], details: bool) -> std::process::Outpu
         .env("CI", "true")
         .env("REPROIT_AUTHORITY", "https://fixture.reproit.test")
         .env_remove("REPROIT_CLI_CLIENT_ID")
-        .env_remove("REPROIT_CLOUD_ORIGIN")
-        .env_remove("REPROIT_OCI_CREDENTIAL_FILE");
+        .env_remove("REPROIT_CLOUD_ORIGIN");
     if details {
         command.arg("--details");
     }
@@ -74,17 +74,16 @@ fn assert_no_forbidden_default_terms(output: &std::process::Output) {
 
 fn write_project_fixture(root: &Path, include_kept: bool) -> KeptReference {
     let vectors: Value = serde_json::from_str(VECTORS).expect("protocol vectors");
-    let mut config_value = vectors["positive"]["project_config"]["value"].clone();
-    config_value["processing_mode"] = Value::String("managed".to_owned());
-    config_value["keep"] = Value::Null;
-    let config: ProjectConfig =
-        canonical::parse_strict(&serde_json::to_vec(&config_value).expect("project fixture JSON"))
-            .expect("project fixture");
-    let mut kept_value = vectors["positive"]["kept_reference"]["value"].clone();
-    kept_value["processing_mode"] = Value::String("managed".to_owned());
-    let kept: KeptReference =
-        canonical::parse_strict(&serde_json::to_vec(&kept_value).expect("kept fixture JSON"))
-            .expect("kept fixture");
+    let config: ProjectConfig = canonical::parse_strict(
+        &serde_json::to_vec(&vectors["positive"]["project_config"]["value"])
+            .expect("project fixture JSON"),
+    )
+    .expect("project fixture");
+    let kept: KeptReference = canonical::parse_strict(
+        &serde_json::to_vec(&vectors["positive"]["kept_reference"]["value"])
+            .expect("kept fixture JSON"),
+    )
+    .expect("kept fixture");
     let mut repository = FilesystemRepository::new(root);
     initialize(&mut repository, &config).expect("write project fixture");
     if include_kept {
@@ -105,19 +104,56 @@ fn help_is_a_process_level_pass() {
 }
 
 #[test]
-fn public_command_surface_contains_exactly_the_eight_contract_commands() {
+fn mcp_stdio_lists_the_seven_bounded_tools() {
+    let mut child = reproit()
+        .arg("mcp")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("start MCP server");
+    let input = concat!(
+        "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}\n",
+        "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n",
+        "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}\n"
+    );
+    child
+        .stdin
+        .take()
+        .expect("MCP standard input")
+        .write_all(input.as_bytes())
+        .expect("write MCP requests");
+    let output = child.wait_with_output().expect("wait for MCP server");
+    assert_eq!(output.status.code(), Some(0));
+    assert!(output.stderr.is_empty());
+    assert!(output.stdout.len() <= MAX_PROCESS_OUTPUT_BYTES);
+    let responses = output
+        .stdout
+        .split(|byte| *byte == b'\n')
+        .filter(|line| !line.is_empty())
+        .map(|line| serde_json::from_slice::<Value>(line).expect("MCP JSON response"))
+        .collect::<Vec<_>>();
+    assert_eq!(responses.len(), 2);
+    let tools = responses[1]["result"]["tools"]
+        .as_array()
+        .expect("MCP tools");
+    assert_eq!(tools.len(), 7);
+    assert!(tools.iter().any(|tool| tool["name"] == "remove_repro"));
+}
+
+#[test]
+fn public_command_surface_contains_the_nine_contract_commands() {
     let output = reproit().arg("--help").output().expect("run CLI help");
     assert_eq!(output.status.code(), Some(0));
     assert!(output.stderr.is_empty());
     let help = String::from_utf8(output.stdout).expect("UTF-8 help");
     for command in [
-        "login", "init", "list", "triage", "debug", "check", "keep", "remove",
+        "login", "init", "list", "triage", "debug", "check", "keep", "mcp", "remove",
     ] {
         assert!(help.contains(&format!("  {command}")), "missing {command}");
     }
     assert!(!help.contains("  link"));
     assert!(!help.contains("  help"));
-    assert!(!help.contains("  mcp"));
 
     for arguments in [
         &["login", "--help"][..],
@@ -127,6 +163,7 @@ fn public_command_surface_contains_exactly_the_eight_contract_commands() {
         &["debug", "--help"],
         &["check", "--help"],
         &["keep", "--help"],
+        &["mcp", "--help"],
         &["remove", "--help"],
     ] {
         let output = reproit()
@@ -157,7 +194,6 @@ fn noncontract_commands_use_the_bounded_command_error() {
             "link",
         ),
         (&["help"][..], "help"),
-        (&["mcp"][..], "mcp"),
     ] {
         let output = reproit()
             .args(arguments)
@@ -466,7 +502,7 @@ fn kept_list_and_remove_have_exact_process_level_success_output() {
         String::from_utf8(removed.stdout.clone()).expect("UTF-8 remove result"),
         concat!(
             "Removed the kept reference for rpr_01890f3e-7b1c-7cc0-8a1b-123456789ac2.\n",
-            "Customer storage and Cloud history were not deleted.\n"
+            "Cloud history was not deleted.\n"
         )
     );
     assert!(removed.stderr.is_empty());

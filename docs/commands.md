@@ -6,9 +6,10 @@ Sign in through the browser. The CLI stores the session in the native credential
 
 ## `reproit init`
 
-Connect the current repository to one service and SDK. The command writes
-`.reproit/project.toml`. It prints the package install command and the framework-neutral operation
-call.
+Check for complete automatic World capture support. If support is absent, stop before the command
+writes `.reproit/project.toml`.
+
+When support is present, connect the current repository to one service and SDK.
 
 Run it again to change the current setup. The command shows the file change before it writes it.
 
@@ -54,6 +55,11 @@ Check the current source. After `PASS`, write a tracked reference under `.reproi
 ## `reproit remove <id>`
 
 Remove the tracked reference from the current repository. Keep the Repro and its Cloud history.
+
+## `reproit mcp`
+
+Serve seven bounded Repro operations to coding agents through standard input and standard output.
+Use the same login, authorization, and application operations as the human commands.
 
 ## Exit codes
 

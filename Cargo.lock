@@ -1861,7 +1861,7 @@ dependencies = [
 [[package]]
 name = "reproit-backend"
 version = "1.0.0"
-source = "git+https://github.com/ReproIt/reproit-core?rev=59888cfb6620b9a2f11018793a60bd6de7624df8#59888cfb6620b9a2f11018793a60bd6de7624df8"
+source = "git+https://github.com/ReproIt/reproit-core?rev=c43bd6c0347ab5ab5e5a3b2d050558cd4332b027#c43bd6c0347ab5ab5e5a3b2d050558cd4332b027"
 dependencies = [
  "reproit-core",
  "serde",
@@ -1901,7 +1901,7 @@ dependencies = [
 [[package]]
 name = "reproit-cloud-api"
 version = "1.0.0"
-source = "git+https://github.com/ReproIt/reproit-core?rev=59888cfb6620b9a2f11018793a60bd6de7624df8#59888cfb6620b9a2f11018793a60bd6de7624df8"
+source = "git+https://github.com/ReproIt/reproit-core?rev=c43bd6c0347ab5ab5e5a3b2d050558cd4332b027#c43bd6c0347ab5ab5e5a3b2d050558cd4332b027"
 dependencies = [
  "reproit-core",
  "secrecy",
@@ -1912,7 +1912,7 @@ dependencies = [
 [[package]]
 name = "reproit-core"
 version = "1.0.0"
-source = "git+https://github.com/ReproIt/reproit-core?rev=59888cfb6620b9a2f11018793a60bd6de7624df8#59888cfb6620b9a2f11018793a60bd6de7624df8"
+source = "git+https://github.com/ReproIt/reproit-core?rev=c43bd6c0347ab5ab5e5a3b2d050558cd4332b027#c43bd6c0347ab5ab5e5a3b2d050558cd4332b027"
 dependencies = [
  "aes-gcm",
  "base64 0.23.1",
@@ -1934,7 +1934,7 @@ dependencies = [
 [[package]]
 name = "reproit-worker"
 version = "1.0.0"
-source = "git+https://github.com/ReproIt/reproit-core?rev=59888cfb6620b9a2f11018793a60bd6de7624df8#59888cfb6620b9a2f11018793a60bd6de7624df8"
+source = "git+https://github.com/ReproIt/reproit-core?rev=c43bd6c0347ab5ab5e5a3b2d050558cd4332b027#c43bd6c0347ab5ab5e5a3b2d050558cd4332b027"
 dependencies = [
  "reproit-cloud-api",
  "reproit-core",

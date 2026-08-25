@@ -18,9 +18,11 @@ reproit login
 reproit init
 ```
 
-`reproit init` connects one service and SDK. It writes `.reproit/project.toml`. It also prints the
-package install command and the framework-neutral operation call. The application does not create
-Repro It schemas or IDs.
+`reproit init` first checks for complete automatic World capture support. If support is absent, the
+command stops before it writes `.reproit/project.toml`. It does not create a partial configuration.
+
+After complete support is installed, `reproit init` connects one service and SDK. The application
+does not create Repro It schemas or IDs.
 
 ## Fix a captured bug
 
@@ -39,9 +41,13 @@ reproit check
 | `check <id>` | Test the current source against one Repro. |
 | `keep <id>` | Add the passing Repro to the repository. |
 | `check` | Run all tracked Repros. |
+| `mcp` | Give a coding agent the same bounded Repro operations. |
 
 `PASS` means that the captured Failure is absent. `REGRESSION` means that it still occurs. `ERROR`
 means that Repro It could not produce an exact result.
+
+`reproit mcp` serves MCP through standard input and standard output. It uses the same login,
+authorization, and application operations as the human commands.
 
 Read the [quick start](docs/quick-start.md) for the full bug-fix loop. Use the
 [command reference](docs/commands.md) for options and exit codes.

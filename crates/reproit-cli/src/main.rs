@@ -1,5 +1,6 @@
 use std::{collections::BTreeSet, process::ExitCode};
 
+mod capture_detection;
 mod login_command;
 
 #[cfg(test)]
@@ -27,6 +28,8 @@ use reproit_cli::{
 };
 use reproit_cloud_api::{Priority, ServiceCatalogQuery, Workflow};
 use reproit_core::{Error, ErrorCode, identity::ReproId};
+
+use capture_detection::require_automatic_capture;
 
 const OFFICIAL_CLOUD_ORIGIN: &str = "https://cloud.reproit.com";
 const SERVICE_CATALOG_PAGE_SIZE: u8 = 50;
@@ -60,6 +63,7 @@ enum Command {
     Debug { repro_id: ReproId },
     Check { repro_id: Option<ReproId> },
     Keep { repro_id: ReproId },
+    Mcp,
     Remove { repro_id: ReproId },
 }
 
@@ -209,14 +213,13 @@ async fn run(cli: Cli) -> Result<(), Error> {
         Command::Remove { repro_id } => {
             remove_kept(&mut store, repro_id)?;
             stdout_line(format_args!("Removed the kept reference for {repro_id}."))?;
-            stdout_line(format_args!(
-                "Customer storage and Cloud history were not deleted."
-            ))?;
+            stdout_line(format_args!("Cloud history was not deleted."))?;
             Ok(())
         }
         Command::Debug { repro_id } => debug_command(&agent, repro_id).await,
         Command::Check { repro_id } => check_command(&agent, repro_id).await,
         Command::Keep { repro_id } => keep_command(&agent, repro_id).await,
+        Command::Mcp => reproit_cli::mcp::serve(root).await,
     }
 }
 
@@ -436,10 +439,10 @@ async fn initialize_command(
     let sdk = select_sdk(&args, current.as_ref())?;
     let working_directory = repository_relative_path(&repository.root, current_directory)?;
     let service_path = select_service_path(&args, current.as_ref(), &working_directory)?;
+    require_automatic_capture()?;
     let run = select_run(&args, current.as_ref(), &working_directory)?;
     let config = ProjectConfig {
         format: 1,
-        keep: None,
         organization_id: service.organization_id,
         profile: "backend".to_owned(),
         profile_format: 1,
@@ -849,11 +852,10 @@ impl From<&Command> for PublicErrorContext {
         match command {
             Command::Check { .. } => Self::Check,
             Command::Login => Self::Login,
-            Command::Init(_) | Command::Keep { .. } | Command::List(_) | Command::Triage(_) => {
-                Self::Cloud
-            }
+            Command::Init(_) => Self::Init,
+            Command::Keep { .. } | Command::List(_) | Command::Triage(_) => Self::Cloud,
             Command::Debug { .. } => Self::Source,
-            Command::Remove { .. } => Self::General,
+            Command::Mcp | Command::Remove { .. } => Self::General,
         }
     }
 }
