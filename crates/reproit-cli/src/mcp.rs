@@ -12,7 +12,10 @@ use reproit_app::{
     },
     remove_kept,
 };
-use reproit_core::{Error, ErrorCode};
+use reproit_core::{
+    Error, ErrorCode,
+    contracts::{CLOUD_API_SCHEMAS, CORE_SCHEMAS, MCP_SCHEMAS},
+};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufRead, AsyncBufReadExt as _, AsyncWrite, AsyncWriteExt as _, BufReader};
@@ -29,9 +32,6 @@ const MAX_REQUEST_BYTES: usize = 64 * 1024;
 const MAX_RESULT_BYTES: usize = 1024 * 1024;
 const MAX_METADATA_CALLS: usize = 32;
 const MAX_EXECUTION_CALLS: usize = 2;
-const MCP_SCHEMAS: &str = include_str!("../../../specs/v1/mcp-schemas.json");
-const CLOUD_SCHEMAS: &str = include_str!("../../../specs/v1/cloud-api-schemas.json");
-const CORE_SCHEMAS: &str = include_str!("../../../specs/v1/schemas.json");
 
 pub async fn serve(root: PathBuf) -> Result<(), Error> {
     let input = BufReader::new(tokio::io::stdin());
@@ -520,8 +520,9 @@ impl SchemaSource {
         match self {
             Self::Mcp => MCP_DOCUMENT
                 .get_or_init(|| serde_json::from_str(MCP_SCHEMAS).expect("valid MCP schemas")),
-            Self::Cloud => CLOUD_DOCUMENT
-                .get_or_init(|| serde_json::from_str(CLOUD_SCHEMAS).expect("valid Cloud schemas")),
+            Self::Cloud => CLOUD_DOCUMENT.get_or_init(|| {
+                serde_json::from_str(CLOUD_API_SCHEMAS).expect("valid Cloud schemas")
+            }),
             Self::Core => CORE_DOCUMENT
                 .get_or_init(|| serde_json::from_str(CORE_SCHEMAS).expect("valid Core schemas")),
         }

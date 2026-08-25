@@ -29,12 +29,11 @@ use reproit_cli::{
 use reproit_cloud_api::{Priority, ServiceCatalogQuery, Workflow};
 use reproit_core::{Error, ErrorCode, identity::ReproId};
 
-use capture_detection::require_automatic_capture;
+use capture_detection::{ReleasedSdkDeclaration, released_sdk};
 
 const OFFICIAL_CLOUD_ORIGIN: &str = "https://cloud.reproit.com";
 const SERVICE_CATALOG_PAGE_SIZE: u8 = 50;
 const MAX_SERVICE_CATALOG_PAGES: usize = 6;
-const MANAGED_PROJECT_TOKEN_ENV: &str = "REPROIT_MANAGED_PROJECT_TOKEN";
 
 #[derive(Parser)]
 #[command(
@@ -437,9 +436,9 @@ async fn initialize_command(
     let current = ProjectStore::read_project(&store)?;
     let service = select_initialization_service(&directory, &args, current.as_ref())?;
     let sdk = select_sdk(&args, current.as_ref())?;
+    let sdk_release = released_sdk(sdk)?;
     let working_directory = repository_relative_path(&repository.root, current_directory)?;
     let service_path = select_service_path(&args, current.as_ref(), &working_directory)?;
-    require_automatic_capture()?;
     let run = select_run(&args, current.as_ref(), &working_directory)?;
     let config = ProjectConfig {
         format: 1,
@@ -477,7 +476,7 @@ async fn initialize_command(
             stdout_line(format_args!("Repro It is already ready."))?;
         }
     }
-    render_sdk_setup(sdk)?;
+    render_sdk_setup(sdk_release)?;
     Ok(())
 }
 
@@ -755,67 +754,24 @@ fn repository_relative_path(
     Ok(value)
 }
 
-fn render_sdk_setup(sdk: BackendSdk) -> Result<(), Error> {
-    stdout_line(format_args!("Install the released SDK:"))?;
-    for line in sdk_install_lines(sdk) {
+fn render_sdk_setup(sdk: ReleasedSdkDeclaration) -> Result<(), Error> {
+    for line in sdk_setup_lines(sdk) {
         stdout_line(format_args!("{line}"))?;
     }
-    stdout_line(format_args!(
-        "Set {MANAGED_PROJECT_TOKEN_ENV} in your deployment secret store."
-    ))?;
-    stdout_line(format_args!(
-        "Do not put the token in .reproit/project.toml."
-    ))?;
-    stdout_line(format_args!(
-        "The SDK reads the token only after it captures a complete Failure."
-    ))?;
-    stdout_line(format_args!(
-        "Initialize Repro It once. Wrap each top-level application operation:"
-    ))?;
-    stdout_line(format_args!("{}", sdk_operation_setup(sdk)))?;
-    stdout_line(format_args!(
-        "The SDK loads .reproit/project.toml and the current Git revision."
-    ))
+    Ok(())
 }
 
-const fn sdk_install_lines(sdk: BackendSdk) -> &'static [&'static str] {
-    match sdk {
-        BackendSdk::Dotnet => &["dotnet add package ReproIt.Sdk --version 1.0.0"],
-        BackendSdk::Go => &["go get reproit.dev/sdk-go@v1.0.0"],
-        BackendSdk::Nodejs => &["npm install @reproit/sdk@1.0.0"],
-        BackendSdk::Python => &["python -m pip install reproit-sdk==1.0.0"],
-        BackendSdk::Rust => &["cargo add reproit-sdk-rust@1.0.0"],
-    }
-}
-
-const fn sdk_operation_setup(sdk: BackendSdk) -> &'static str {
-    match sdk {
-        BackendSdk::Dotnet => concat!(
-            "ReproItCapture capture = ReproItCapture.Init();\n",
-            "Todo todo = await capture.OperationAsync(\"todos.create\", inputBytes, ",
-            "() => CreateTodo(input));"
-        ),
-        BackendSdk::Go => concat!(
-            "capture := reproit.Init()\n",
-            "todo, err := reproit.Operation(capture, \"todos.create\", inputBytes, ",
-            "func() (Todo, error) { return createTodo(input) })"
-        ),
-        BackendSdk::Nodejs => concat!(
-            "const reproit = ReproIt.init();\n",
-            "const todo = await reproit.operation(\"todos.create\", inputBytes, ",
-            "() => createTodo(input));"
-        ),
-        BackendSdk::Python => concat!(
-            "reproit = ReproIt.init()\n",
-            "todo = await reproit.operation_async(\"todos.create\", input_bytes, ",
-            "lambda: create_todo(input))"
-        ),
-        BackendSdk::Rust => concat!(
-            "let reproit = ReproIt::init();\n",
-            "let todo = reproit.operation(\"todos.create\", &input_bytes, ",
-            "|| async { create_todo(input).await }).await?;"
-        ),
-    }
+fn sdk_setup_lines(sdk: ReleasedSdkDeclaration) -> [&'static str; 8] {
+    [
+        "Install the released SDK:",
+        sdk.install_command,
+        "Set REPROIT_MANAGED_PROJECT_TOKEN in your deployment secret store.",
+        "Do not put the token in .reproit/project.toml.",
+        "The SDK reads the token only after it captures a complete Failure.",
+        "The SDK captures supported application observations automatically.",
+        "Unsupported effects keep that Failure local.",
+        "The SDK loads .reproit/project.toml and the current Git revision.",
+    ]
 }
 
 fn evaluation_error() -> Error {

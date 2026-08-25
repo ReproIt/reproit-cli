@@ -6,7 +6,7 @@ use reproit_cli::FilesystemRepository;
 use reproit_core::{canonical, identity::ReproId, model::KeptReference};
 use serde_json::Value;
 
-const VECTORS: &str = include_str!("../../../specs/v1/protocol-vectors.json");
+const VECTORS: &str = reproit_core::contracts::PROTOCOL_VECTORS;
 
 #[test]
 fn filesystem_store_writes_only_tracked_configuration() {

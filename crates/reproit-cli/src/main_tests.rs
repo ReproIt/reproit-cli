@@ -36,42 +36,45 @@ fn regression_exit_one_is_exclusive_to_check() {
 }
 
 #[test]
-fn every_sdk_setup_uses_an_exact_release_and_public_boundary() {
+fn every_sdk_setup_is_an_exact_release_without_generated_source() {
     let cases = [
-        (BackendSdk::Dotnet, "ReproIt.Sdk", "capture.OperationAsync"),
-        (BackendSdk::Go, "reproit.dev/sdk-go", "reproit.Operation"),
-        (BackendSdk::Nodejs, "@reproit/sdk", "reproit.operation"),
-        (BackendSdk::Python, "reproit-sdk", "reproit.operation_async"),
-        (BackendSdk::Rust, "reproit-sdk-rust", "reproit.operation"),
+        (
+            BackendSdk::Dotnet,
+            "dotnet add package ReproIt.Sdk --version 1.0.0",
+        ),
+        (BackendSdk::Go, "go get reproit.dev/sdk-go@v1.0.0"),
+        (BackendSdk::Nodejs, "npm install @reproit/sdk@1.0.0"),
+        (
+            BackendSdk::Python,
+            "python -m pip install reproit-sdk==1.0.0",
+        ),
+        (BackendSdk::Rust, "cargo add reproit-sdk-rust@1.0.0"),
     ];
-    for (sdk, package, operation_api) in cases {
-        let install = sdk_install_lines(sdk).join("\n");
-        assert!(install.contains(package));
-        assert!(install.contains("1.0.0"));
-        assert!(sdk_operation_setup(sdk).contains(operation_api));
-    }
-    assert_eq!(MANAGED_PROJECT_TOKEN_ENV, "REPROIT_MANAGED_PROJECT_TOKEN");
-    for sdk in [
-        BackendSdk::Dotnet,
-        BackendSdk::Go,
-        BackendSdk::Nodejs,
-        BackendSdk::Python,
-        BackendSdk::Rust,
-    ] {
-        let setup = sdk_operation_setup(sdk);
-        assert!(setup.contains("init") || setup.contains("Init"));
-        assert!(!setup.to_ascii_lowercase().contains("middleware"));
-        for hidden_api in [
-            "CandidateStart",
-            "FailureIdentity",
-            "ManagedProjectToken",
-            "ManagedWorldCapture",
-            "OfficialManaged",
-            "ReproIt::from_build",
-            "candidate_sink",
-            "Sdk::begin",
+    for (sdk, install_command) in cases {
+        let setup = sdk_setup_lines(released_sdk(sdk).unwrap());
+        assert_eq!(
+            setup,
+            [
+                "Install the released SDK:",
+                install_command,
+                "Set REPROIT_MANAGED_PROJECT_TOKEN in your deployment secret store.",
+                "Do not put the token in .reproit/project.toml.",
+                "The SDK reads the token only after it captures a complete Failure.",
+                "The SDK captures supported application observations automatically.",
+                "Unsupported effects keep that Failure local.",
+                "The SDK loads .reproit/project.toml and the current Git revision.",
+            ]
+        );
+        let output = setup.join("\n");
+        for generated_source in [
+            "ReproIt.init",
+            "ReproItCapture.Init",
+            "operation_async",
+            "reproit.Operation",
+            "reproit.operation",
+            "reproit_sdk_rust",
         ] {
-            assert!(!setup.contains(hidden_api));
+            assert!(!output.contains(generated_source));
         }
     }
 }

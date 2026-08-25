@@ -11,7 +11,7 @@ use reproit_core::{canonical, model::KeptReference};
 use serde_json::Value;
 
 const REPRO_ID: &str = "rpr_01890f3e-7b1c-7cc0-8a1b-123456789ac2";
-const VECTORS: &str = include_str!("../../../specs/v1/protocol-vectors.json");
+const VECTORS: &str = reproit_core::contracts::PROTOCOL_VECTORS;
 const MAX_LINE_BYTES: usize = 8 * 1024;
 const MAX_PROCESS_OUTPUT_BYTES: usize = 1024 * 1024;
 const FORBIDDEN_DEFAULT_TERMS: [&str; 15] = [
