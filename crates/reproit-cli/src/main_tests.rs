@@ -46,6 +46,30 @@ fn interactive_and_non_interactive_init_share_node_run_normalization() {
 }
 
 #[test]
+fn interactive_and_non_interactive_init_share_python_run_normalization() {
+    for non_interactive in [false, true] {
+        for run in [
+            vec!["python3", "service.py", "--port", "8080"],
+            vec!["python", "-m", "orders.worker", "--queue", "urgent"],
+        ] {
+            let arguments = InitArgs {
+                non_interactive,
+                run: run.iter().map(|value| (*value).to_owned()).collect(),
+                sdk: Some(SdkArg::Python),
+                service: Some("acme/commerce/payments".to_owned()),
+                service_path: None,
+            };
+            let normalized = select_startup_run(BackendSdk::Python, &arguments, None, ".").unwrap();
+            assert_eq!(
+                &normalized.arguments[..3],
+                ["-m", "reproit_sdk.register", "--"]
+            );
+            assert_eq!(&normalized.arguments[3..], &arguments.run[1..]);
+        }
+    }
+}
+
+#[test]
 fn regression_exit_one_is_exclusive_to_check() {
     let error = Error::new(ErrorCode::DifferentFailure, "safe test error");
     assert_eq!(error_exit_code(PublicErrorContext::Check, &error), 1);

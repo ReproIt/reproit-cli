@@ -7,6 +7,9 @@ const MAX_DECLARED_CAPABILITIES: usize = 16;
 const MAX_CAPABILITY_BYTES: usize = 128;
 const NODE_REGISTER_FLAG: &str = "--import";
 const NODE_REGISTER_MODULE: &str = "@reproit/sdk/register";
+const PYTHON_MODULE_FLAG: &str = "-m";
+const PYTHON_REGISTER_MODULE: &str = "reproit_sdk.register";
+const PYTHON_TARGET_SEPARATOR: &str = "--";
 
 #[derive(Clone, Copy)]
 pub(crate) struct ReleasedSdkDeclaration {
@@ -22,10 +25,15 @@ pub(crate) fn released_sdk(sdk: BackendSdk) -> Result<ReleasedSdkDeclaration, Er
     Ok(declaration)
 }
 
-pub(crate) fn normalize_startup_run(sdk: BackendSdk, mut run: RunSpec) -> Result<RunSpec, Error> {
-    if sdk != BackendSdk::Nodejs {
-        return Ok(run);
+pub(crate) fn normalize_startup_run(sdk: BackendSdk, run: RunSpec) -> Result<RunSpec, Error> {
+    match sdk {
+        BackendSdk::Nodejs => normalize_node_run(run),
+        BackendSdk::Python => normalize_python_run(run),
+        BackendSdk::Dotnet | BackendSdk::Go | BackendSdk::Rust => Ok(run),
     }
+}
+
+fn normalize_node_run(mut run: RunSpec) -> Result<RunSpec, Error> {
     if !is_direct_node_program(&run.program) {
         return Err(unsupported_node_run_program());
     }
@@ -43,6 +51,45 @@ pub(crate) fn normalize_startup_run(sdk: BackendSdk, mut run: RunSpec) -> Result
     Ok(run)
 }
 
+fn normalize_python_run(mut run: RunSpec) -> Result<RunSpec, Error> {
+    if !is_direct_python_program(&run.program) {
+        return Err(unsupported_python_run());
+    }
+    let exact_prefix = matches!(
+        run.arguments.as_slice(),
+        [module_flag, register_module, separator, ..]
+            if module_flag == PYTHON_MODULE_FLAG
+                && register_module == PYTHON_REGISTER_MODULE
+                && separator == PYTHON_TARGET_SEPARATOR
+    );
+    let target = if exact_prefix {
+        &run.arguments[3..]
+    } else {
+        if matches!(
+            run.arguments.as_slice(),
+            [module_flag, register_module, ..]
+                if module_flag == PYTHON_MODULE_FLAG
+                    && register_module == PYTHON_REGISTER_MODULE
+        ) {
+            return Err(unsupported_python_run());
+        }
+        run.arguments.as_slice()
+    };
+    if !valid_python_target(target) {
+        return Err(unsupported_python_run());
+    }
+    if exact_prefix {
+        return Ok(run);
+    }
+    let mut arguments = Vec::with_capacity(run.arguments.len().saturating_add(3));
+    arguments.push(PYTHON_MODULE_FLAG.to_owned());
+    arguments.push(PYTHON_REGISTER_MODULE.to_owned());
+    arguments.push(PYTHON_TARGET_SEPARATOR.to_owned());
+    arguments.append(&mut run.arguments);
+    run.arguments = arguments;
+    Ok(run)
+}
+
 fn is_direct_node_program(program: &str) -> bool {
     let name = program.rsplit(['/', '\\']).next().unwrap_or_default();
     matches!(
@@ -51,12 +98,58 @@ fn is_direct_node_program(program: &str) -> bool {
     )
 }
 
+fn is_direct_python_program(program: &str) -> bool {
+    let name = program.rsplit(['/', '\\']).next().unwrap_or_default();
+    let lowercase = name.to_ascii_lowercase();
+    let executable = lowercase.strip_suffix(".exe").unwrap_or(&lowercase);
+    executable == "python"
+        || executable == "python3"
+        || executable.strip_prefix("python3.").is_some_and(|version| {
+            !version.is_empty() && version.bytes().all(|byte| byte.is_ascii_digit())
+        })
+}
+
+fn valid_python_target(arguments: &[String]) -> bool {
+    let Some((target, remaining)) = arguments.split_first() else {
+        return false;
+    };
+    if target == PYTHON_MODULE_FLAG {
+        let Some((module, _)) = remaining.split_first() else {
+            return false;
+        };
+        return valid_python_module(module);
+    }
+    !target.is_empty() && !target.starts_with('-') && !target.chars().any(char::is_control)
+}
+
+fn valid_python_module(module: &str) -> bool {
+    !module.is_empty()
+        && module.split('.').all(|component| {
+            let mut characters = component.chars();
+            characters.next().is_some_and(|first| {
+                (first.is_ascii_alphabetic() || first == '_')
+                    && characters
+                        .all(|character| character.is_ascii_alphanumeric() || character == '_')
+            })
+        })
+}
+
 fn unsupported_node_run_program() -> Error {
     Error::new(
         ErrorCode::ConfigConflict,
         concat!(
             "Use node or nodejs as the Node.js run program. ",
             "Put the application script after the program.",
+        ),
+    )
+}
+
+fn unsupported_python_run() -> Error {
+    Error::new(
+        ErrorCode::ConfigConflict,
+        concat!(
+            "Use python or python3 as the Python run program. ",
+            "Put one script or -m module after it.",
         ),
     )
 }
@@ -227,13 +320,112 @@ mod tests {
     }
 
     #[test]
-    fn other_sdk_run_arrays_do_not_change() {
-        for sdk in [
-            BackendSdk::Dotnet,
-            BackendSdk::Go,
+    fn python_script_run_gets_the_registration_wrapper() {
+        let normalized = normalize_startup_run(
             BackendSdk::Python,
-            BackendSdk::Rust,
+            run("python3", &["service.py", "--port", "8080"]),
+        )
+        .unwrap();
+        assert_eq!(
+            normalized.arguments,
+            [
+                "-m",
+                "reproit_sdk.register",
+                "--",
+                "service.py",
+                "--port",
+                "8080",
+            ]
+        );
+    }
+
+    #[test]
+    fn python_module_run_gets_the_registration_wrapper() {
+        let normalized = normalize_startup_run(
+            BackendSdk::Python,
+            run("python", &["-m", "orders.worker", "--queue", "urgent"]),
+        )
+        .unwrap();
+        assert_eq!(
+            normalized.arguments,
+            [
+                "-m",
+                "reproit_sdk.register",
+                "--",
+                "-m",
+                "orders.worker",
+                "--queue",
+                "urgent",
+            ]
+        );
+    }
+
+    #[test]
+    fn python_registration_wrapper_is_idempotent() {
+        for target in [
+            vec!["service.py"],
+            vec!["-m", "orders.worker", "--queue", "urgent"],
         ] {
+            let mut arguments = vec!["-m", "reproit_sdk.register", "--"];
+            arguments.extend(target);
+            let original = run("python3", &arguments);
+            assert_eq!(
+                normalize_startup_run(BackendSdk::Python, original.clone()).unwrap(),
+                original
+            );
+        }
+    }
+
+    #[test]
+    fn python_run_accepts_direct_unix_and_windows_paths() {
+        for program in [
+            "/usr/bin/python3",
+            "/opt/python/bin/python3.13",
+            r"C:\Python313\python.exe",
+        ] {
+            let normalized =
+                normalize_startup_run(BackendSdk::Python, run(program, &["service.py"])).unwrap();
+            assert_eq!(normalized.program, program);
+            assert_eq!(
+                normalized.arguments,
+                ["-m", "reproit_sdk.register", "--", "service.py"]
+            );
+        }
+    }
+
+    #[test]
+    fn python_run_rejects_wrappers_and_invalid_targets_with_one_action() {
+        let cases = [
+            ("uv", vec!["run", "service.py"]),
+            ("poetry", vec!["run", "python", "service.py"]),
+            ("py", vec!["service.py"]),
+            ("python", vec![]),
+            ("python", vec!["-c", "print('no')"]),
+            ("python", vec!["-u", "service.py"]),
+            ("python", vec!["-m"]),
+            ("python", vec!["-m", ""]),
+            ("python", vec!["-m", "orders/worker"]),
+            ("python", vec!["-m", "orders..worker"]),
+            ("python", vec!["-m", "reproit_sdk.register"]),
+            ("python", vec!["-m", "reproit_sdk.register", "--"]),
+        ];
+        for (program, arguments) in cases {
+            let error =
+                normalize_startup_run(BackendSdk::Python, run(program, &arguments)).unwrap_err();
+            assert_eq!(error.code, ErrorCode::ConfigConflict);
+            assert_eq!(
+                error.message,
+                concat!(
+                    "Use python or python3 as the Python run program. ",
+                    "Put one script or -m module after it.",
+                )
+            );
+        }
+    }
+
+    #[test]
+    fn other_sdk_run_arrays_do_not_change() {
+        for sdk in [BackendSdk::Dotnet, BackendSdk::Go, BackendSdk::Rust] {
             let original = run("wrapper", &["service", "--flag"]);
             assert_eq!(
                 normalize_startup_run(sdk, original.clone()).unwrap(),
