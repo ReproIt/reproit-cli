@@ -29,7 +29,7 @@ use reproit_cli::{
 use reproit_cloud_api::{Priority, ServiceCatalogQuery, Workflow};
 use reproit_core::{Error, ErrorCode, identity::ReproId};
 
-use capture_detection::{ReleasedSdkDeclaration, released_sdk};
+use capture_detection::{ReleasedSdkDeclaration, normalize_startup_run, released_sdk};
 
 const OFFICIAL_CLOUD_ORIGIN: &str = "https://cloud.reproit.com";
 const SERVICE_CATALOG_PAGE_SIZE: u8 = 50;
@@ -439,7 +439,7 @@ async fn initialize_command(
     let sdk_release = released_sdk(sdk)?;
     let working_directory = repository_relative_path(&repository.root, current_directory)?;
     let service_path = select_service_path(&args, current.as_ref(), &working_directory)?;
-    let run = select_run(&args, current.as_ref(), &working_directory)?;
+    let run = select_startup_run(sdk, &args, current.as_ref(), &working_directory)?;
     let config = ProjectConfig {
         format: 1,
         organization_id: service.organization_id,
@@ -610,6 +610,15 @@ fn select_run(
         program: program.clone(),
         working_directory: working_directory.to_owned(),
     })
+}
+
+fn select_startup_run(
+    sdk: BackendSdk,
+    args: &InitArgs,
+    current: Option<&ProjectConfig>,
+    working_directory: &str,
+) -> Result<RunSpec, Error> {
+    normalize_startup_run(sdk, select_run(args, current, working_directory)?)
 }
 
 fn select_service_path(

@@ -1,10 +1,12 @@
-use reproit_backend::config::BackendSdk;
+use reproit_backend::config::{BackendSdk, RunSpec};
 use reproit_core::{Error, ErrorCode};
 
 pub(crate) const AUTOMATIC_CAPTURE_CAPABILITY: &str = "capture.automatic-world.v1";
 const RELEASED_SDK_VERSION: &str = "1.0.0";
 const MAX_DECLARED_CAPABILITIES: usize = 16;
 const MAX_CAPABILITY_BYTES: usize = 128;
+const NODE_REGISTER_FLAG: &str = "--import";
+const NODE_REGISTER_MODULE: &str = "@reproit/sdk/register";
 
 #[derive(Clone, Copy)]
 pub(crate) struct ReleasedSdkDeclaration {
@@ -18,6 +20,45 @@ pub(crate) fn released_sdk(sdk: BackendSdk) -> Result<ReleasedSdkDeclaration, Er
     let declaration = declaration(sdk);
     validate_declaration(sdk, &declaration)?;
     Ok(declaration)
+}
+
+pub(crate) fn normalize_startup_run(sdk: BackendSdk, mut run: RunSpec) -> Result<RunSpec, Error> {
+    if sdk != BackendSdk::Nodejs {
+        return Ok(run);
+    }
+    if !is_direct_node_program(&run.program) {
+        return Err(unsupported_node_run_program());
+    }
+    if matches!(
+        run.arguments.as_slice(),
+        [flag, module, ..] if flag == NODE_REGISTER_FLAG && module == NODE_REGISTER_MODULE
+    ) {
+        return Ok(run);
+    }
+    let mut arguments = Vec::with_capacity(run.arguments.len().saturating_add(2));
+    arguments.push(NODE_REGISTER_FLAG.to_owned());
+    arguments.push(NODE_REGISTER_MODULE.to_owned());
+    arguments.append(&mut run.arguments);
+    run.arguments = arguments;
+    Ok(run)
+}
+
+fn is_direct_node_program(program: &str) -> bool {
+    let name = program.rsplit(['/', '\\']).next().unwrap_or_default();
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "node" | "node.exe" | "nodejs" | "nodejs.exe"
+    )
+}
+
+fn unsupported_node_run_program() -> Error {
+    Error::new(
+        ErrorCode::ConfigConflict,
+        concat!(
+            "Use node or nodejs as the Node.js run program. ",
+            "Put the application script after the program.",
+        ),
+    )
 }
 
 fn declaration(sdk: BackendSdk) -> ReleasedSdkDeclaration {
@@ -111,5 +152,101 @@ mod tests {
     fn a_declaration_for_another_sdk_is_rejected() {
         let declaration = declaration(BackendSdk::Python);
         assert!(validate_declaration(BackendSdk::Nodejs, &declaration).is_err());
+    }
+
+    #[test]
+    fn node_run_gets_the_registration_prefix() {
+        let normalized = normalize_startup_run(
+            BackendSdk::Nodejs,
+            run("node", &["service.mjs", "--port", "8080"]),
+        )
+        .unwrap();
+        assert_eq!(
+            normalized.arguments,
+            [
+                "--import",
+                "@reproit/sdk/register",
+                "service.mjs",
+                "--port",
+                "8080",
+            ]
+        );
+    }
+
+    #[test]
+    fn node_run_registration_prefix_is_idempotent() {
+        let original = run(
+            "nodejs",
+            &["--import", "@reproit/sdk/register", "service.mjs"],
+        );
+        assert_eq!(
+            normalize_startup_run(BackendSdk::Nodejs, original.clone()).unwrap(),
+            original
+        );
+    }
+
+    #[test]
+    fn node_run_accepts_direct_executable_paths() {
+        for program in ["/usr/local/bin/node", "./tools/nodejs"] {
+            let normalized =
+                normalize_startup_run(BackendSdk::Nodejs, run(program, &["service.mjs"])).unwrap();
+            assert_eq!(normalized.program, program);
+            assert_eq!(
+                normalized.arguments,
+                ["--import", "@reproit/sdk/register", "service.mjs"]
+            );
+        }
+    }
+
+    #[test]
+    fn node_run_accepts_a_windows_node_executable_path() {
+        let program = r"C:\Program Files\nodejs\node.exe";
+        let normalized =
+            normalize_startup_run(BackendSdk::Nodejs, run(program, &["service.mjs"])).unwrap();
+        assert_eq!(normalized.program, program);
+        assert_eq!(
+            normalized.arguments,
+            ["--import", "@reproit/sdk/register", "service.mjs"]
+        );
+    }
+
+    #[test]
+    fn node_run_rejects_ambiguous_wrappers_with_one_action() {
+        for program in ["npm", "yarn", "sh", "cmd.exe"] {
+            let error =
+                normalize_startup_run(BackendSdk::Nodejs, run(program, &["start"])).unwrap_err();
+            assert_eq!(error.code, ErrorCode::ConfigConflict);
+            assert_eq!(
+                error.message,
+                concat!(
+                    "Use node or nodejs as the Node.js run program. ",
+                    "Put the application script after the program.",
+                )
+            );
+        }
+    }
+
+    #[test]
+    fn other_sdk_run_arrays_do_not_change() {
+        for sdk in [
+            BackendSdk::Dotnet,
+            BackendSdk::Go,
+            BackendSdk::Python,
+            BackendSdk::Rust,
+        ] {
+            let original = run("wrapper", &["service", "--flag"]);
+            assert_eq!(
+                normalize_startup_run(sdk, original.clone()).unwrap(),
+                original
+            );
+        }
+    }
+
+    fn run(program: &str, arguments: &[&str]) -> RunSpec {
+        RunSpec {
+            arguments: arguments.iter().map(|value| (*value).to_owned()).collect(),
+            program: program.to_owned(),
+            working_directory: ".".to_owned(),
+        }
     }
 }

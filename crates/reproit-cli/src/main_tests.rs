@@ -28,6 +28,24 @@ fn initialization_requires_a_service_path_only_below_the_repository_root() {
 }
 
 #[test]
+fn interactive_and_non_interactive_init_share_node_run_normalization() {
+    for non_interactive in [false, true] {
+        let arguments = InitArgs {
+            non_interactive,
+            run: vec!["node".to_owned(), "service.mjs".to_owned()],
+            sdk: Some(SdkArg::Nodejs),
+            service: Some("acme/commerce/payments".to_owned()),
+            service_path: None,
+        };
+        let run = select_startup_run(BackendSdk::Nodejs, &arguments, None, ".").unwrap();
+        assert_eq!(
+            run.arguments,
+            ["--import", "@reproit/sdk/register", "service.mjs"]
+        );
+    }
+}
+
+#[test]
 fn regression_exit_one_is_exclusive_to_check() {
     let error = Error::new(ErrorCode::DifferentFailure, "safe test error");
     assert_eq!(error_exit_code(PublicErrorContext::Check, &error), 1);
