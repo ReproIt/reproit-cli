@@ -18,11 +18,15 @@ reproit login
 reproit init
 ```
 
-`reproit init` first checks for complete automatic World capture support. If support is absent, the
-command stops before it writes `.reproit/project.toml`. It does not create a partial configuration.
+`reproit init` first checks for complete automatic World capture support. For Go,
+it compiles the selected package and verifies the required instrumentation in the
+temporary binary. It does not run the binary. For Node.js and Python, the SDK
+exits from an internal probe before application code runs. If the exact proof is
+absent, the command stops before it writes `.reproit/project.toml`.
 
-After complete support is installed, `reproit init` connects one service and SDK. The application
-does not create Repro It schemas or IDs.
+The current probe supports direct Go, Node.js, and Python application commands.
+After complete support is installed, `reproit init` connects one service and SDK.
+The application does not create Repro It schemas or IDs.
 
 ## Fix a captured bug
 

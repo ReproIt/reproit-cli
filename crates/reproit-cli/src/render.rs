@@ -66,8 +66,11 @@ pub const fn public_error(
             "Check your Git access, then try again.",
         ),
         ErrorCode::UnsupportedCapabilitySet if matches!(context, PublicErrorContext::Init) => (
-            "The selected SDK does not support automatic World capture.",
-            "Select a released SDK with automatic World capture, then run reproit init again.",
+            "The application did not load complete automatic World capture.",
+            concat!(
+                "Install a supported SDK and use its direct application command, ",
+                "then run reproit init again.",
+            ),
         ),
         ErrorCode::UnsupportedCapabilitySet => (
             "No compatible replay host is available.",
@@ -179,9 +182,9 @@ mod tests {
                 ErrorCode::UnsupportedCapabilitySet,
             ),
             (
-                "The selected SDK does not support automatic World capture.",
+                "The application did not load complete automatic World capture.",
                 concat!(
-                    "Select a released SDK with automatic World capture, ",
+                    "Install a supported SDK and use its direct application command, ",
                     "then run reproit init again."
                 )
             )

@@ -11,8 +11,17 @@ reproit login
 reproit init
 ```
 
-Select the service, SDK, service path, and application command. Repro It checks for complete
-automatic World capture support before it writes `.reproit/project.toml`.
+Select the service, SDK, service path, and direct application command. For Go,
+Repro It compiles the selected package and inspects the temporary binary. It does
+not run the binary. For Node.js and Python, the SDK exits from an internal probe
+before application code runs. Repro It writes `.reproit/project.toml` only after
+verification succeeds.
+
+The current probe supports Go, Node.js, and Python.
+
+For a Go service, use its normal direct `go run` command. Repro It stores the
+required internal build instrumentation. The later workflow still uses the same
+`reproit debug` and `reproit check` commands.
 
 If support is absent, `reproit init` stops without a configuration change. Install a released SDK
 with complete automatic capture before you continue.

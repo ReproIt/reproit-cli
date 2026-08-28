@@ -1,6 +1,9 @@
 use std::{collections::BTreeSet, path::PathBuf, process::ExitCode};
 
 mod capture_detection;
+mod capture_probe;
+mod go_capture_probe;
+mod go_instrumentation;
 mod login_command;
 
 #[cfg(test)]
@@ -159,6 +162,10 @@ impl From<PriorityArg> for Priority {
 
 #[tokio::main]
 async fn main() -> ExitCode {
+    let arguments = std::env::args_os().collect::<Vec<_>>();
+    if go_instrumentation::is_invocation(&arguments) {
+        return go_instrumentation::run(&arguments);
+    }
     let cli = match Cli::try_parse() {
         Ok(cli) => cli,
         Err(error)
@@ -493,6 +500,7 @@ async fn initialize_command(
     let working_directory = repository_relative_path(&repository.root, current_directory)?;
     let service_path = select_service_path(&args, current.as_ref(), &working_directory)?;
     let run = select_startup_run(sdk, &args, current.as_ref(), &working_directory)?;
+    capture_probe::verify(&repository.root, sdk, &run)?;
     let config = ProjectConfig {
         format: 1,
         organization_id: service.organization_id,
@@ -623,7 +631,7 @@ fn select_sdk(args: &InitArgs, current: Option<&ProjectConfig>) -> Result<Backen
         ));
     }
     stdout_line(format_args!("Select an SDK:"))?;
-    stdout_line(format_args!("dotnet, go, nodejs, python, rust"))?;
+    stdout_line(format_args!("go, nodejs, python"))?;
     match read_bounded_answer()?.as_str() {
         "dotnet" => Ok(BackendSdk::Dotnet),
         "go" => Ok(BackendSdk::Go),

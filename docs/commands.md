@@ -6,12 +6,20 @@ Sign in through the browser. The CLI stores the session in the native credential
 
 ## `reproit init`
 
-Check for complete automatic World capture support. If support is absent, stop before the command
-writes `.reproit/project.toml`.
+Check for complete automatic World capture support. For Go, the CLI compiles the
+selected package and verifies the required instrumentation in the temporary
+binary. It does not run the binary. For Node.js and Python, the SDK reports the
+exact shared proof and exits before application code runs. If verification fails,
+stop before the command writes `.reproit/project.toml`.
 
-When support is present, connect the current repository to one service and SDK.
+The current probe supports Go, Node.js, and Python. When support is present,
+connect the current repository to one service and SDK.
 
 Run it again to change the current setup. The command shows the file change before it writes it.
+
+For Go, provide a direct `go run` command. Initialization adds the internal build
+instrumentation flags to the stored run configuration. It does not add a public
+language-specific command.
 
 For an agent or script, use:
 

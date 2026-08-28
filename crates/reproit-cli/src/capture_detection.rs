@@ -10,8 +10,10 @@ const NODE_REGISTER_MODULE: &str = "@reproit/sdk/register";
 const PYTHON_MODULE_FLAG: &str = "-m";
 const PYTHON_REGISTER_MODULE: &str = "reproit_sdk.register";
 const PYTHON_TARGET_SEPARATOR: &str = "--";
+const GO_REBUILD_FLAG: &str = "-a";
+const GO_TOOLEXEC_FLAG: &str = "-toolexec=reproit";
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub(crate) struct ReleasedSdkDeclaration {
     pub(crate) install_command: &'static str,
     sdk: BackendSdk,
@@ -27,10 +29,41 @@ pub(crate) fn released_sdk(sdk: BackendSdk) -> Result<ReleasedSdkDeclaration, Er
 
 pub(crate) fn normalize_startup_run(sdk: BackendSdk, run: RunSpec) -> Result<RunSpec, Error> {
     match sdk {
+        BackendSdk::Go => normalize_go_run(run),
         BackendSdk::Nodejs => normalize_node_run(run),
         BackendSdk::Python => normalize_python_run(run),
-        BackendSdk::Dotnet | BackendSdk::Go | BackendSdk::Rust => Ok(run),
+        BackendSdk::Dotnet | BackendSdk::Rust => Ok(run),
     }
+}
+
+fn normalize_go_run(mut run: RunSpec) -> Result<RunSpec, Error> {
+    if !is_direct_go_program(&run.program)
+        || !matches!(run.arguments.first(), Some(command) if command == "run")
+    {
+        return Err(unsupported_go_run());
+    }
+    let exact_prefix = matches!(
+        run.arguments.as_slice(),
+        [command, rebuild, toolexec, ..]
+            if command == "run"
+                && rebuild == GO_REBUILD_FLAG
+                && toolexec == GO_TOOLEXEC_FLAG
+    );
+    if exact_prefix {
+        return Ok(run);
+    }
+    if run.arguments.iter().any(|argument| {
+        argument == GO_REBUILD_FLAG || argument == GO_TOOLEXEC_FLAG || argument == "-toolexec"
+    }) {
+        return Err(unsupported_go_run());
+    }
+    let mut arguments = Vec::with_capacity(run.arguments.len().saturating_add(2));
+    arguments.push("run".to_owned());
+    arguments.push(GO_REBUILD_FLAG.to_owned());
+    arguments.push(GO_TOOLEXEC_FLAG.to_owned());
+    arguments.extend(run.arguments.drain(1..));
+    run.arguments = arguments;
+    Ok(run)
 }
 
 fn normalize_node_run(mut run: RunSpec) -> Result<RunSpec, Error> {
@@ -109,6 +142,11 @@ fn is_direct_python_program(program: &str) -> bool {
         })
 }
 
+fn is_direct_go_program(program: &str) -> bool {
+    let name = program.rsplit(['/', '\\']).next().unwrap_or_default();
+    matches!(name.to_ascii_lowercase().as_str(), "go" | "go.exe")
+}
+
 fn valid_python_target(arguments: &[String]) -> bool {
     let Some((target, remaining)) = arguments.split_first() else {
         return false;
@@ -154,6 +192,16 @@ fn unsupported_python_run() -> Error {
     )
 }
 
+fn unsupported_go_run() -> Error {
+    Error::new(
+        ErrorCode::ConfigConflict,
+        concat!(
+            "Use go run as the Go run program. ",
+            "Put the application package after run.",
+        ),
+    )
+}
+
 fn declaration(sdk: BackendSdk) -> ReleasedSdkDeclaration {
     let install_command = match sdk {
         BackendSdk::Dotnet => "dotnet add package ReproIt.Sdk --version 1.0.0",
@@ -166,7 +214,12 @@ fn declaration(sdk: BackendSdk) -> ReleasedSdkDeclaration {
         install_command,
         sdk,
         version: RELEASED_SDK_VERSION,
-        capabilities: &[AUTOMATIC_CAPTURE_CAPABILITY],
+        capabilities: match sdk {
+            BackendSdk::Go | BackendSdk::Nodejs | BackendSdk::Python => {
+                &[AUTOMATIC_CAPTURE_CAPABILITY]
+            }
+            BackendSdk::Dotnet | BackendSdk::Rust => &[],
+        },
     }
 }
 
@@ -207,21 +260,24 @@ fn unsupported_capture() -> Error {
 mod tests {
     use super::*;
 
-    const SDKS: [BackendSdk; 5] = [
-        BackendSdk::Dotnet,
-        BackendSdk::Go,
-        BackendSdk::Nodejs,
-        BackendSdk::Python,
-        BackendSdk::Rust,
-    ];
+    const SUPPORTED_SDKS: [BackendSdk; 3] =
+        [BackendSdk::Go, BackendSdk::Nodejs, BackendSdk::Python];
 
     #[test]
     fn every_released_sdk_declares_automatic_capture() {
-        for sdk in SDKS {
+        for sdk in SUPPORTED_SDKS {
             let declaration = released_sdk(sdk).unwrap();
             assert_eq!(declaration.version, RELEASED_SDK_VERSION);
             assert_eq!(declaration.capabilities, [AUTOMATIC_CAPTURE_CAPABILITY]);
             assert!(declaration.install_command.contains("1.0.0"));
+        }
+    }
+
+    #[test]
+    fn incomplete_sdk_releases_are_not_declared_supported() {
+        for sdk in [BackendSdk::Dotnet, BackendSdk::Rust] {
+            let error = released_sdk(sdk).unwrap_err();
+            assert_eq!(error.code, ErrorCode::UnsupportedCapabilitySet);
         }
     }
 
@@ -424,8 +480,60 @@ mod tests {
     }
 
     #[test]
+    fn go_run_gets_internal_build_instrumentation() {
+        let normalized = normalize_startup_run(
+            BackendSdk::Go,
+            run("go", &["run", "./cmd/service", "--port", "8080"]),
+        )
+        .unwrap();
+        assert_eq!(
+            normalized.arguments,
+            [
+                "run",
+                "-a",
+                "-toolexec=reproit",
+                "./cmd/service",
+                "--port",
+                "8080",
+            ]
+        );
+    }
+
+    #[test]
+    fn go_run_instrumentation_is_idempotent() {
+        let original = run(
+            "/usr/local/bin/go",
+            &["run", "-a", "-toolexec=reproit", "./cmd/service"],
+        );
+        assert_eq!(
+            normalize_startup_run(BackendSdk::Go, original.clone()).unwrap(),
+            original
+        );
+    }
+
+    #[test]
+    fn go_run_rejects_wrappers_and_ambiguous_flags() {
+        for (program, arguments) in [
+            ("make", vec!["run"]),
+            ("go", vec!["build", "./cmd/service"]),
+            ("go", vec!["run", "-toolexec", "other", "./cmd/service"]),
+        ] {
+            let error =
+                normalize_startup_run(BackendSdk::Go, run(program, &arguments)).unwrap_err();
+            assert_eq!(error.code, ErrorCode::ConfigConflict);
+            assert_eq!(
+                error.message,
+                concat!(
+                    "Use go run as the Go run program. ",
+                    "Put the application package after run.",
+                )
+            );
+        }
+    }
+
+    #[test]
     fn other_sdk_run_arrays_do_not_change() {
-        for sdk in [BackendSdk::Dotnet, BackendSdk::Go, BackendSdk::Rust] {
+        for sdk in [BackendSdk::Dotnet, BackendSdk::Rust] {
             let original = run("wrapper", &["service", "--flag"]);
             assert_eq!(
                 normalize_startup_run(sdk, original.clone()).unwrap(),
