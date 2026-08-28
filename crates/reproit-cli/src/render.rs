@@ -11,6 +11,7 @@ pub enum PublicErrorContext {
     General,
     Init,
     Login,
+    Release,
     Source,
 }
 
@@ -79,6 +80,10 @@ pub const fn public_error(
         ErrorCode::KeyProviderUnavailable | ErrorCode::KeyUnwrapFailed => (
             "Repro It could not unlock the kept Repro.",
             "Check your Repro It key access, then try again.",
+        ),
+        ErrorCode::ObjectDigestMismatch if matches!(context, PublicErrorContext::Release) => (
+            "The evidence bundle failed verification.",
+            "Restore the evidence bundle from a verified copy.",
         ),
         ErrorCode::ObjectDigestMismatch | ErrorCode::DecryptionAuthentication => (
             "The stored Repro failed verification.",

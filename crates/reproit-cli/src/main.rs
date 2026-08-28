@@ -1,4 +1,4 @@
-use std::{collections::BTreeSet, process::ExitCode};
+use std::{collections::BTreeSet, path::PathBuf, process::ExitCode};
 
 mod capture_detection;
 mod login_command;
@@ -61,9 +61,17 @@ enum Command {
     Triage(TriageArgs),
     Debug { repro_id: ReproId },
     Check { repro_id: Option<ReproId> },
+    Gate(GateArgs),
     Keep { repro_id: ReproId },
     Mcp,
     Remove { repro_id: ReproId },
+    Verify { bundle_path: PathBuf },
+}
+
+#[derive(Args)]
+struct GateArgs {
+    #[arg(long)]
+    config: PathBuf,
 }
 
 #[derive(Args)]
@@ -183,11 +191,55 @@ async fn main() -> ExitCode {
     };
     let details = cli.details;
     let context = PublicErrorContext::from(&cli.command);
+    match &cli.command {
+        Command::Gate(args) => {
+            return release_command_exit(
+                reproit_cli::release_gate::run(&args.config),
+                details,
+                true,
+            );
+        }
+        Command::Verify { bundle_path } => {
+            return release_command_exit(
+                reproit_cli::release_gate::verify(bundle_path),
+                details,
+                false,
+            );
+        }
+        _ => {}
+    }
     match run(cli).await {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             render_error(context, &error, details);
             ExitCode::from(error_exit_code(context, &error))
+        }
+    }
+}
+
+fn release_command_exit(
+    result: Result<reproit_experiments::ReleaseDecision, Error>,
+    details: bool,
+    print_unknown_on_error: bool,
+) -> ExitCode {
+    match result {
+        Ok(decision) => {
+            let (label, code) = match decision {
+                reproit_experiments::ReleaseDecision::Pass => ("PASS", 0),
+                reproit_experiments::ReleaseDecision::Regression => ("REGRESSION", 1),
+                reproit_experiments::ReleaseDecision::Unknown => ("UNKNOWN", 2),
+            };
+            if stdout_line(format_args!("{label}")).is_err() {
+                return ExitCode::from(2);
+            }
+            ExitCode::from(code)
+        }
+        Err(error) => {
+            if print_unknown_on_error {
+                let _ = stdout_line(format_args!("UNKNOWN"));
+            }
+            render_error(PublicErrorContext::Release, &error, details);
+            ExitCode::from(2)
         }
     }
 }
@@ -217,6 +269,7 @@ async fn run(cli: Cli) -> Result<(), Error> {
         }
         Command::Debug { repro_id } => debug_command(&agent, repro_id).await,
         Command::Check { repro_id } => check_command(&agent, repro_id).await,
+        Command::Gate(_) | Command::Verify { .. } => Err(evaluation_error()),
         Command::Keep { repro_id } => keep_command(&agent, repro_id).await,
         Command::Mcp => reproit_cli::mcp::serve(root).await,
     }
@@ -820,6 +873,7 @@ impl From<&Command> for PublicErrorContext {
             Command::Init(_) => Self::Init,
             Command::Keep { .. } | Command::List(_) | Command::Triage(_) => Self::Cloud,
             Command::Debug { .. } => Self::Source,
+            Command::Gate(_) | Command::Verify { .. } => Self::Release,
             Command::Mcp | Command::Remove { .. } => Self::General,
         }
     }

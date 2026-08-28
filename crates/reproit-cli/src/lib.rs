@@ -6,6 +6,7 @@ pub mod executor_control;
 pub mod initialization;
 mod login;
 pub mod mcp;
+pub mod release_gate;
 pub mod render;
 mod source;
 mod source_package;

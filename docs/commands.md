@@ -48,6 +48,63 @@ Run one Repro against the current source. The result is `PASS`, `REGRESSION`, or
 
 Run all tracked Repros. The command reports each result and final totals.
 
+## `reproit gate --config <path>`
+
+Run a baseline command and a candidate command. The commands receive suite cases as JSON Lines on
+standard input. Each command must return one JSON Lines output record for each completed case.
+
+The configuration uses explicit executables and argument arrays. It does not run a shell command
+string. All input and output paths are relative to the configuration file.
+
+```toml
+format = "reproit.release-gate-config.v1"
+suite_path = "suite.json"
+bundle_path = "evidence.json"
+
+[limits]
+max_execution_seconds = 300
+max_records = 1024
+max_stderr_bytes = 1048576
+max_stdin_bytes = 41943040
+max_stdout_bytes = 16777216
+
+[baseline]
+executable = "./run-model"
+arguments = ["baseline"]
+model_path = "baseline-model.json"
+
+[candidate]
+executable = "./run-model"
+arguments = ["candidate"]
+model_path = "candidate-model.json"
+```
+
+The suite uses `reproit.ml-evaluation-suite.v1`. Each model file uses
+`reproit.ml-model-identity.v1`.
+
+Each input record has this form:
+
+```json
+{"case_id":"configured-color","input_text":"State the configured color."}
+```
+
+Each completed output record has this form:
+
+```json
+{"case_id":"configured-color","output_text":"blue"}
+```
+
+The command writes one content-addressed JSON evidence bundle. The bundle contains the suite,
+both ModelRuns, bounded raw outputs, the verdict, the release decision, and digest bindings.
+
+This local bundle is not an independently signed Release Claim. Cloud confirmation must add the
+second runner and its authenticated evidence before Repro It creates that Claim.
+
+## `reproit verify <bundle-path>`
+
+Verify a release evidence bundle without Cloud access. The command checks the raw evidence,
+ModelRuns, suite, verdict, release decision, and all digest bindings.
+
 ## `reproit keep <id>`
 
 Check the current source. After `PASS`, write a tracked reference under `.reproit/repros/`.
@@ -63,9 +120,9 @@ Use the same login, authorization, and application operations as the human comma
 
 ## Exit codes
 
-- `0` means that the command succeeded. For `check`, all evaluated Repros passed.
-- `1` means that `check` found a regression.
-- `2` means that the command could not produce a valid result.
+- `0` means that the command succeeded. For `check` and `gate`, the result is `PASS`.
+- `1` means that `check` or `gate` found a `REGRESSION`.
+- `2` means that the command produced `UNKNOWN` or could not produce a valid result.
 
 Use `--details` to show a stable error code and bounded technical facts. The option keeps the same
 result and exit code.

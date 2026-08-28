@@ -1,0 +1,15 @@
+name: Repro It Release Gate
+description: Run a Repro It release gate with an installed CLI.
+inputs:
+  config:
+    description: Path to the release-gate configuration.
+    required: false
+    default: .reproit/release.toml
+runs:
+  using: composite
+  steps:
+    - name: Run the release gate
+      shell: bash
+      env:
+        REPROIT_RELEASE_CONFIG: ${{ inputs.config }}
+      run: reproit gate --config "$REPROIT_RELEASE_CONFIG"

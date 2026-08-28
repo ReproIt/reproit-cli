@@ -4,9 +4,10 @@ use reproit_cloud_api::{
     ConfigConflict, ManagedKeepRequest, ManagedKeepResult, ManagedOciGrant, ManagedOciGrantRequest,
     OccurrenceList, OccurrenceListQuery, ProjectCreateRequest, ProjectCreateResult, ProjectTokenId,
     ProjectTokenIssueRequest, ProjectTokenIssueResult, ProjectTokenRevokeRequest,
-    ProjectTokenRevokeResult, ProjectTokenRotateRequest, ProjectTokenRotateResult, ReproDetail,
-    ReproList, ReproListQuery, ServiceCatalog, ServiceCatalogQuery, ServiceCreateRequest,
-    ServiceCreateResult, Triage, TriageConflict,
+    ProjectTokenRevokeResult, ProjectTokenRotateRequest, ProjectTokenRotateResult,
+    ReleaseJobCreateRequest, ReleaseJobCreateResult, ReleaseJobDetailResponse, ReleaseJobId,
+    ReproDetail, ReproList, ReproListQuery, ServiceCatalog, ServiceCatalogQuery,
+    ServiceCreateRequest, ServiceCreateResult, Triage, TriageConflict,
 };
 use reproit_core::{
     Error, ErrorCode, canonical,
@@ -17,6 +18,7 @@ use serde::{Serialize, de::DeserializeOwned};
 
 const MAX_CLOUD_RESPONSE_BYTES: usize = 2 * 1_024 * 1_024;
 const MAX_RESPONSE_HEADER_BYTES: usize = 32 * 1_024;
+const MAX_RELEASE_JOB_REQUEST_BYTES: usize = 4 * 1_024;
 const CLOUD_API_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub struct HttpCloudClient {
@@ -90,6 +92,38 @@ impl HttpCloudClient {
             )
             .await?;
         result.validate()?;
+        Ok(result)
+    }
+
+    pub async fn create_release_job(
+        &self,
+        project_id: ProjectId,
+        request: &ReleaseJobCreateRequest,
+    ) -> Result<ReleaseJobCreateResult, Error> {
+        let response = self
+            .release_job_create_request(project_id, request)?
+            .send()
+            .await
+            .map_err(service_unavailable)?;
+        let result: ReleaseJobCreateResult = decode_response(response).await?;
+        result.validate()?;
+        Ok(result)
+    }
+
+    pub async fn get_release_job(
+        &self,
+        release_job_id: ReleaseJobId,
+    ) -> Result<ReleaseJobDetailResponse, Error> {
+        let response = self
+            .release_job_get_request(release_job_id)
+            .send()
+            .await
+            .map_err(service_unavailable)?;
+        let result: ReleaseJobDetailResponse = decode_response(response).await?;
+        result.validate()?;
+        if result.release_job_id != release_job_id {
+            return Err(Error::schema_invalid());
+        }
         Ok(result)
     }
 
@@ -258,6 +292,35 @@ impl HttpCloudClient {
             .bearer_auth(self.bearer_token.expose_secret())
             .timeout(CLOUD_API_REQUEST_TIMEOUT)
     }
+
+    fn release_job_create_request(
+        &self,
+        project_id: ProjectId,
+        request: &ReleaseJobCreateRequest,
+    ) -> Result<reqwest::RequestBuilder, Error> {
+        request.validate()?;
+        if request.project_id != project_id {
+            return Err(Error::schema_invalid());
+        }
+        let body = canonical::canonical_bytes(request)?;
+        if body.len() > MAX_RELEASE_JOB_REQUEST_BYTES {
+            return Err(Error::new(
+                ErrorCode::RuntimeQuota,
+                "The release-job request exceeds its byte limit.",
+            ));
+        }
+        Ok(self
+            .cloud_request(
+                reqwest::Method::POST,
+                &project_release_jobs_path(project_id),
+            )
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .body(body))
+    }
+
+    fn release_job_get_request(&self, release_job_id: ReleaseJobId) -> reqwest::RequestBuilder {
+        self.cloud_request(reqwest::Method::GET, &release_job_path(release_job_id))
+    }
 }
 
 async fn decode_response<T: DeserializeOwned>(mut response: reqwest::Response) -> Result<T, Error> {
@@ -333,6 +396,14 @@ fn project_tokens_path(project_id: ProjectId) -> String {
     format!("/v1/projects/{project_id}/tokens")
 }
 
+fn project_release_jobs_path(project_id: ProjectId) -> String {
+    format!("/v1/projects/{project_id}/release-jobs")
+}
+
+fn release_job_path(release_job_id: ReleaseJobId) -> String {
+    format!("/v1/release-jobs/{release_job_id}")
+}
+
 /// Parse the canonical Cloud origin: one exact HTTPS origin with a root path
 /// and no credentials, port, query, or fragment. Return the origin without a
 /// trailing slash so callers can append absolute API paths. Both origin
@@ -370,14 +441,15 @@ mod tests {
 
     use reproit_cloud_api::{
         ProjectCreateRequest, ProjectTokenId, ProjectTokenIssueRequest, ProjectTokenRevokeRequest,
-        ProjectTokenRotateRequest, ServiceCatalogQuery, ServiceCreateRequest,
+        ProjectTokenRotateRequest, ReleaseJobCreateRequest, ReleaseJobId, ServiceCatalogQuery,
+        ServiceCreateRequest,
     };
-    use reproit_core::{ErrorCode, identity::ProjectId};
+    use reproit_core::{ErrorCode, canonical, identity::ProjectId};
     use secrecy::SecretString;
 
     use super::{
         CLOUD_API_REQUEST_TIMEOUT, HttpCloudClient, parse_cloud_origin, project_services_path,
-        project_token_path, project_tokens_path,
+        project_token_path, project_tokens_path, release_job_path,
     };
 
     #[test]
@@ -478,6 +550,87 @@ mod tests {
         );
     }
 
+    #[test]
+    fn release_job_http_requests_use_exact_authenticated_routes_and_bounded_bodies() {
+        let client = cloud_client();
+        let request = release_job_create_request();
+        let create = client
+            .release_job_create_request(request.project_id, &request)
+            .unwrap()
+            .build()
+            .unwrap();
+
+        assert_eq!(create.method(), reqwest::Method::POST);
+        assert_eq!(
+            create.url().path(),
+            "/v1/projects/prj_01890f3e-7b1c-7cc0-8a1b-123456789ac0/release-jobs"
+        );
+        assert_eq!(
+            create.headers()[reqwest::header::CONTENT_TYPE],
+            "application/json"
+        );
+        let expected_authorization = ["Bearer", "developer-session-token"].join(" ");
+        assert_eq!(
+            create.headers()[reqwest::header::AUTHORIZATION],
+            expected_authorization
+        );
+        assert_eq!(
+            create.timeout(),
+            Some(&Duration::from_secs(CLOUD_API_REQUEST_TIMEOUT.as_secs()))
+        );
+        let body: ReleaseJobCreateRequest = canonical::parse_strict(
+            create
+                .body()
+                .and_then(reqwest::Body::as_bytes)
+                .expect("release-job request body"),
+        )
+        .unwrap();
+        assert_eq!(body, request);
+
+        let release_job_id: ReleaseJobId =
+            "rev_01890f3e-7b1c-7cc0-8a1b-123456789abd".parse().unwrap();
+        let get = client
+            .release_job_get_request(release_job_id)
+            .build()
+            .unwrap();
+        assert_eq!(get.method(), reqwest::Method::GET);
+        assert_eq!(
+            get.url().path(),
+            "/v1/release-jobs/rev_01890f3e-7b1c-7cc0-8a1b-123456789abd"
+        );
+        assert_eq!(
+            get.headers()[reqwest::header::AUTHORIZATION],
+            expected_authorization
+        );
+        assert!(get.body().is_none());
+        assert_eq!(
+            release_job_path(release_job_id),
+            "/v1/release-jobs/rev_01890f3e-7b1c-7cc0-8a1b-123456789abd"
+        );
+    }
+
+    #[tokio::test]
+    async fn release_job_create_rejects_invalid_scope_and_body_before_network_access() {
+        let client = cloud_client();
+        let mut request = release_job_create_request();
+        request.idempotency_key = "too-short".to_owned();
+        assert_schema_invalid(
+            &client
+                .create_release_job(request.project_id, &request)
+                .await
+                .unwrap_err(),
+        );
+
+        let request = release_job_create_request();
+        let other_project: ProjectId = "prj_01890f3e-7b1c-7cc0-8a1b-123456789abe".parse().unwrap();
+        assert_schema_invalid(
+            &client
+                .create_release_job(other_project, &request)
+                .await
+                .unwrap_err(),
+        );
+    }
+
     #[tokio::test]
     async fn onboarding_rejects_invalid_requests_before_network_access() {
         let client = cloud_client();
@@ -547,6 +700,49 @@ mod tests {
         HttpCloudClient::new(
             "https://cloud.example",
             SecretString::from("developer-session-token".to_owned()),
+        )
+        .unwrap()
+    }
+
+    fn release_job_create_request() -> ReleaseJobCreateRequest {
+        canonical::parse_strict(
+            &serde_json::to_vec(&serde_json::json!({
+                "baseline_artifact_digest": concat!(
+                    "sha256:",
+                    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                ),
+                "candidate_artifact_digest": concat!(
+                    "sha256:",
+                    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+                ),
+                "dataset_digest": concat!(
+                    "sha256:",
+                    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                ),
+                "evaluator_digest": concat!(
+                    "sha256:",
+                    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+                ),
+                "idempotency_key": "release-test-key",
+                "organization_id": "org_01890f3e-7b1c-7cc0-8a1b-123456789abc",
+                "primary_evidence": {
+                    "environment_digest": concat!(
+                        "sha256:",
+                        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                    ),
+                    "evidence_digest": concat!(
+                        "sha256:",
+                        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+                    ),
+                    "runner_digest": concat!(
+                        "sha256:",
+                        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                    )
+                },
+                "project_id": "prj_01890f3e-7b1c-7cc0-8a1b-123456789ac0",
+                "service_id": "svc_01890f3e-7b1c-7cc0-8a1b-123456789ac1"
+            }))
+            .unwrap(),
         )
         .unwrap()
     }

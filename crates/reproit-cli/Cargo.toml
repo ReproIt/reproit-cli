@@ -25,6 +25,8 @@ reproit-app = { path = "../reproit-app", version = "=1.0.0" }
 reproit-backend.workspace = true
 reproit-cloud-api.workspace = true
 reproit-core.workspace = true
+reproit-experiments.workspace = true
+reproit-ml.workspace = true
 reproit-worker.workspace = true
 reqwest.workspace = true
 secrecy.workspace = true

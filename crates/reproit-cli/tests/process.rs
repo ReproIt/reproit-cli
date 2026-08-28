@@ -142,13 +142,14 @@ fn mcp_stdio_lists_the_seven_bounded_tools() {
 }
 
 #[test]
-fn public_command_surface_contains_the_nine_contract_commands() {
+fn public_command_surface_contains_the_eleven_contract_commands() {
     let output = reproit().arg("--help").output().expect("run CLI help");
     assert_eq!(output.status.code(), Some(0));
     assert!(output.stderr.is_empty());
     let help = String::from_utf8(output.stdout).expect("UTF-8 help");
     for command in [
-        "login", "init", "list", "triage", "debug", "check", "keep", "mcp", "remove",
+        "login", "init", "list", "triage", "debug", "check", "gate", "keep", "mcp", "remove",
+        "verify",
     ] {
         assert!(help.contains(&format!("  {command}")), "missing {command}");
     }
@@ -162,9 +163,11 @@ fn public_command_surface_contains_the_nine_contract_commands() {
         &["triage", "--help"],
         &["debug", "--help"],
         &["check", "--help"],
+        &["gate", "--help"],
         &["keep", "--help"],
         &["mcp", "--help"],
         &["remove", "--help"],
+        &["verify", "--help"],
     ] {
         let output = reproit()
             .args(arguments)

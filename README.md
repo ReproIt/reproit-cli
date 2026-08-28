@@ -42,6 +42,8 @@ reproit check
 | `keep <id>` | Add the passing Repro to the repository. |
 | `check` | Run all tracked Repros. |
 | `mcp` | Give a coding agent the same bounded Repro operations. |
+| `gate --config <path>` | Run a baseline and candidate, then make a release decision. |
+| `verify <bundle-path>` | Verify a content-addressed release evidence bundle offline. |
 
 `PASS` means that the captured Failure is absent. `REGRESSION` means that it still occurs. `ERROR`
 means that Repro It could not produce an exact result.
@@ -61,3 +63,5 @@ Run the complete repository check:
 ```
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) before you change public command behavior.
+
+The release-gate integration pins the Experiments and ML repositories to exact Git revisions.
