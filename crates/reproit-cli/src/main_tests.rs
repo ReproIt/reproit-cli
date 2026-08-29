@@ -80,12 +80,17 @@ fn regression_exit_one_is_exclusive_to_check() {
 #[test]
 fn every_supported_sdk_setup_is_an_exact_release_without_generated_source() {
     let cases = [
+        (
+            BackendSdk::Dotnet,
+            "dotnet add package ReproIt.Sdk --version 1.0.0",
+        ),
         (BackendSdk::Go, "go get reproit.dev/sdk-go@v1.0.0"),
         (BackendSdk::Nodejs, "npm install @reproit/sdk@1.0.0"),
         (
             BackendSdk::Python,
             "python -m pip install reproit-sdk==1.0.0",
         ),
+        (BackendSdk::Rust, "cargo add reproit-sdk-rust@1.0.0"),
     ];
     for (sdk, install_command) in cases {
         let setup = sdk_setup_lines(released_sdk(sdk).unwrap());

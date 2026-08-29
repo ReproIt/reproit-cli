@@ -29,11 +29,30 @@ pub(crate) fn released_sdk(sdk: BackendSdk) -> Result<ReleasedSdkDeclaration, Er
 
 pub(crate) fn normalize_startup_run(sdk: BackendSdk, run: RunSpec) -> Result<RunSpec, Error> {
     match sdk {
+        BackendSdk::Dotnet => normalize_dotnet_run(run),
         BackendSdk::Go => normalize_go_run(run),
         BackendSdk::Nodejs => normalize_node_run(run),
         BackendSdk::Python => normalize_python_run(run),
-        BackendSdk::Dotnet | BackendSdk::Rust => Ok(run),
+        BackendSdk::Rust => normalize_rust_run(run),
     }
+}
+
+fn normalize_dotnet_run(run: RunSpec) -> Result<RunSpec, Error> {
+    if is_direct_program(&run.program, &["dotnet", "dotnet.exe"])
+        && matches!(run.arguments.first(), Some(command) if command == "run")
+    {
+        return Ok(run);
+    }
+    Err(unsupported_dotnet_run())
+}
+
+fn normalize_rust_run(run: RunSpec) -> Result<RunSpec, Error> {
+    if is_direct_program(&run.program, &["cargo", "cargo.exe"])
+        && matches!(run.arguments.first(), Some(command) if command == "run")
+    {
+        return Ok(run);
+    }
+    Err(unsupported_rust_run())
 }
 
 fn normalize_go_run(mut run: RunSpec) -> Result<RunSpec, Error> {
@@ -143,8 +162,13 @@ fn is_direct_python_program(program: &str) -> bool {
 }
 
 fn is_direct_go_program(program: &str) -> bool {
+    is_direct_program(program, &["go", "go.exe"])
+}
+
+fn is_direct_program(program: &str, names: &[&str]) -> bool {
     let name = program.rsplit(['/', '\\']).next().unwrap_or_default();
-    matches!(name.to_ascii_lowercase().as_str(), "go" | "go.exe")
+    let lowercase = name.to_ascii_lowercase();
+    names.contains(&lowercase.as_str())
 }
 
 fn valid_python_target(arguments: &[String]) -> bool {
@@ -202,6 +226,20 @@ fn unsupported_go_run() -> Error {
     )
 }
 
+fn unsupported_dotnet_run() -> Error {
+    Error::new(
+        ErrorCode::ConfigConflict,
+        "Use dotnet run as the .NET run program.",
+    )
+}
+
+fn unsupported_rust_run() -> Error {
+    Error::new(
+        ErrorCode::ConfigConflict,
+        "Use cargo run as the Rust run program.",
+    )
+}
+
 fn declaration(sdk: BackendSdk) -> ReleasedSdkDeclaration {
     let install_command = match sdk {
         BackendSdk::Dotnet => "dotnet add package ReproIt.Sdk --version 1.0.0",
@@ -214,12 +252,7 @@ fn declaration(sdk: BackendSdk) -> ReleasedSdkDeclaration {
         install_command,
         sdk,
         version: RELEASED_SDK_VERSION,
-        capabilities: match sdk {
-            BackendSdk::Go | BackendSdk::Nodejs | BackendSdk::Python => {
-                &[AUTOMATIC_CAPTURE_CAPABILITY]
-            }
-            BackendSdk::Dotnet | BackendSdk::Rust => &[],
-        },
+        capabilities: &[AUTOMATIC_CAPTURE_CAPABILITY],
     }
 }
 
@@ -260,8 +293,13 @@ fn unsupported_capture() -> Error {
 mod tests {
     use super::*;
 
-    const SUPPORTED_SDKS: [BackendSdk; 3] =
-        [BackendSdk::Go, BackendSdk::Nodejs, BackendSdk::Python];
+    const SUPPORTED_SDKS: [BackendSdk; 5] = [
+        BackendSdk::Dotnet,
+        BackendSdk::Go,
+        BackendSdk::Nodejs,
+        BackendSdk::Python,
+        BackendSdk::Rust,
+    ];
 
     #[test]
     fn every_released_sdk_declares_automatic_capture() {
@@ -270,14 +308,6 @@ mod tests {
             assert_eq!(declaration.version, RELEASED_SDK_VERSION);
             assert_eq!(declaration.capabilities, [AUTOMATIC_CAPTURE_CAPABILITY]);
             assert!(declaration.install_command.contains("1.0.0"));
-        }
-    }
-
-    #[test]
-    fn incomplete_sdk_releases_are_not_declared_supported() {
-        for sdk in [BackendSdk::Dotnet, BackendSdk::Rust] {
-            let error = released_sdk(sdk).unwrap_err();
-            assert_eq!(error.code, ErrorCode::UnsupportedCapabilitySet);
         }
     }
 
@@ -532,13 +562,21 @@ mod tests {
     }
 
     #[test]
-    fn other_sdk_run_arrays_do_not_change() {
-        for sdk in [BackendSdk::Dotnet, BackendSdk::Rust] {
-            let original = run("wrapper", &["service", "--flag"]);
+    fn dotnet_and_rust_direct_run_arrays_do_not_change() {
+        for (sdk, program) in [(BackendSdk::Dotnet, "dotnet"), (BackendSdk::Rust, "cargo")] {
+            let original = run(program, &["run", "--", "--flag"]);
             assert_eq!(
                 normalize_startup_run(sdk, original.clone()).unwrap(),
                 original
             );
+        }
+    }
+
+    #[test]
+    fn dotnet_and_rust_reject_ambiguous_run_wrappers() {
+        for sdk in [BackendSdk::Dotnet, BackendSdk::Rust] {
+            let error = normalize_startup_run(sdk, run("wrapper", &["run"])).unwrap_err();
+            assert_eq!(error.code, ErrorCode::ConfigConflict);
         }
     }
 

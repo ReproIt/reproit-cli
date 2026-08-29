@@ -10,6 +10,7 @@ use reproit_backend::config::{BackendSdk, RunSpec};
 use reproit_core::{Error, ErrorCode};
 
 const CAPTURE_PROBE_ENVIRONMENT: &str = "REPROIT_INTERNAL_CAPTURE_PROBE";
+const CAPTURE_PROBE_SDK_ENVIRONMENT: &str = "REPROIT_INTERNAL_CAPTURE_PROBE_SDK";
 const CAPTURE_PROBE_FORMAT: &str = "reproit.capture-probe.v1";
 const MAX_CAPTURE_PROBE_OUTPUT_BYTES: u64 = 4 * 1_024;
 const MAX_CAPTURE_PROBE_POLLS: usize = 6_000;
@@ -26,6 +27,7 @@ pub(crate) fn verify(repository_root: &Path, sdk: BackendSdk, run: &RunSpec) -> 
         .args(&run.arguments)
         .current_dir(repository_root.join(&run.working_directory))
         .env(CAPTURE_PROBE_ENVIRONMENT, &nonce)
+        .env(CAPTURE_PROBE_SDK_ENVIRONMENT, sdk_name)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
@@ -50,9 +52,11 @@ pub(crate) fn verify(repository_root: &Path, sdk: BackendSdk, run: &RunSpec) -> 
 
 fn probe_sdk_name(sdk: BackendSdk) -> Result<&'static str, Error> {
     match sdk {
+        BackendSdk::Dotnet => Ok("dotnet"),
         BackendSdk::Nodejs => Ok("nodejs"),
         BackendSdk::Python => Ok("python"),
-        BackendSdk::Dotnet | BackendSdk::Go | BackendSdk::Rust => Err(unsupported_capture()),
+        BackendSdk::Rust => Ok("rust"),
+        BackendSdk::Go => Err(unsupported_capture()),
     }
 }
 
@@ -103,12 +107,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn only_instrumented_sdk_startup_paths_have_a_probe() {
+    fn every_direct_runtime_startup_path_has_a_probe() {
+        assert_eq!(probe_sdk_name(BackendSdk::Dotnet).unwrap(), "dotnet");
         assert_eq!(probe_sdk_name(BackendSdk::Nodejs).unwrap(), "nodejs");
         assert_eq!(probe_sdk_name(BackendSdk::Python).unwrap(), "python");
-        assert!(probe_sdk_name(BackendSdk::Dotnet).is_err());
         assert!(probe_sdk_name(BackendSdk::Go).is_err());
-        assert!(probe_sdk_name(BackendSdk::Rust).is_err());
+        assert_eq!(probe_sdk_name(BackendSdk::Rust).unwrap(), "rust");
     }
 
     #[test]
