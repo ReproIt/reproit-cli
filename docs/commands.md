@@ -44,6 +44,31 @@ reproit list --priority p0
 reproit list --assignee USER
 ```
 
+## `reproit campaign validate <path>`
+
+Parse and validate one TOML campaign file. The command does not contact Cloud or
+start a target process.
+
+## `reproit campaign create <path>`
+
+Validate the campaign, authenticate the project, create the Cloud campaign, save
+the signed grant in private local application state, and start
+`reproit-fuzzer`. The fuzzer runs in the campaign workspace. The command cancels
+the Cloud campaign and removes local grant state if launch fails.
+
+A production campaign must set `target_environment = "production"` and supply a
+separate `REPROIT_FUZZ_PRODUCTION_CAPABILITY` secret. Keep that secret outside
+tracked configuration and command arguments.
+
+## `reproit campaign status <id>`
+
+Read the authenticated Cloud campaign state. Terminal states remove local grant
+state.
+
+## `reproit campaign cancel <id>`
+
+Cancel the authenticated Cloud campaign and remove its local grant state.
+
 ## `reproit triage <id>`
 
 Change the priority, assignment, or workflow state. Resolving a Repro requires a passing check.

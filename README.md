@@ -56,6 +56,25 @@ means that Repro It could not produce an exact result.
 `reproit mcp` serves MCP through standard input and standard output. It uses the same login,
 authorization, and application operations as the human commands.
 
+## Run a distributed fuzz campaign
+
+Validate a campaign without Cloud or target access:
+
+```sh
+reproit campaign validate campaign.toml
+```
+
+Create a Cloud campaign and start the customer-side fuzzer:
+
+```sh
+reproit campaign create campaign.toml
+```
+
+Use `reproit campaign status <id>` to read its state. Use
+`reproit campaign cancel <id>` to cancel it. The CLI stores the signed campaign
+grant in private operating-system application state. It does not write the grant
+to the campaign file or repository.
+
 Read the [quick start](docs/quick-start.md) for the full bug-fix loop. Use the
 [command reference](docs/commands.md) for options and exit codes.
 

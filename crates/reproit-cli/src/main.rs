@@ -1,4 +1,15 @@
-use std::{collections::BTreeSet, path::PathBuf, process::ExitCode};
+use std::{
+    collections::BTreeSet,
+    fs::{self, OpenOptions},
+    io::{Read as _, Write as _},
+    path::{Path, PathBuf},
+    process::{Command as ProcessCommand, ExitCode, Stdio},
+    thread,
+    time::{Duration, Instant},
+};
+
+#[cfg(unix)]
+use std::os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _};
 
 mod capture_detection;
 mod capture_probe;
@@ -29,14 +40,24 @@ use reproit_cli::{
     FilesystemRepository, NativeCredentialStore, current_git_repository,
     initialization::{InitializationDirectory, InitializationService},
 };
-use reproit_cloud_api::{Priority, ServiceCatalogQuery, Workflow};
-use reproit_core::{Error, ErrorCode, identity::ReproId};
+use reproit_cloud_api::{
+    FuzzCampaignCreate, FuzzCampaignGrant, Priority, ServiceCatalogQuery, Workflow,
+};
+use reproit_core::{
+    Error, ErrorCode, canonical,
+    identity::{FuzzCampaignId, ReproId},
+    model::{FuzzCampaignState, Validate},
+};
+use secrecy::ExposeSecret as _;
+use serde::Serialize;
 
 use capture_detection::{ReleasedSdkDeclaration, normalize_startup_run, released_sdk};
 
 const OFFICIAL_CLOUD_ORIGIN: &str = "https://cloud.reproit.com";
 const SERVICE_CATALOG_PAGE_SIZE: u8 = 50;
 const MAX_SERVICE_CATALOG_PAGES: usize = 6;
+const CAMPAIGN_GRANT_STATE_DIRECTORY: &str = "fuzz-campaigns";
+const FUZZER_CONTROL_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Parser)]
 #[command(
@@ -58,6 +79,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    Campaign(CampaignArgs),
     Login,
     Init(InitArgs),
     List(ListArgs),
@@ -69,6 +91,30 @@ enum Command {
     Mcp,
     Remove { repro_id: ReproId },
     Verify { bundle_path: PathBuf },
+}
+
+#[derive(Args)]
+struct CampaignArgs {
+    #[command(subcommand)]
+    command: CampaignCommand,
+}
+
+#[derive(Subcommand)]
+enum CampaignCommand {
+    Cancel { campaign_id: FuzzCampaignId },
+    Create { path: PathBuf },
+    Status { campaign_id: FuzzCampaignId },
+    Validate { path: PathBuf },
+}
+
+#[derive(Serialize)]
+struct FuzzerLaunchRequest {
+    bearer_token: String,
+    campaign_grant: FuzzCampaignGrant,
+    cloud_origin: String,
+    format: &'static str,
+    production_authorization: Option<String>,
+    seed: u64,
 }
 
 #[derive(Args)]
@@ -264,6 +310,7 @@ async fn run(cli: Cli) -> Result<(), Error> {
     let mut store = FilesystemRepository::new(root.clone());
     let agent = ProductionAgent::new(root.clone());
     match cli.command {
+        Command::Campaign(args) => campaign_command(args).await,
         Command::Login => login_command::run().await,
         Command::Init(args) => initialize_command(&root, args).await,
         Command::List(args) => list_command(&agent, args).await,
@@ -279,6 +326,296 @@ async fn run(cli: Cli) -> Result<(), Error> {
         Command::Gate(_) | Command::Verify { .. } => Err(evaluation_error()),
         Command::Keep { repro_id } => keep_command(&agent, repro_id).await,
         Command::Mcp => reproit_cli::mcp::serve(root).await,
+    }
+}
+
+async fn campaign_command(args: CampaignArgs) -> Result<(), Error> {
+    match args.command {
+        CampaignCommand::Validate { path } => {
+            run_fuzzer_command("validate", &path)?;
+            stdout_line(format_args!("The campaign is valid."))
+        }
+        CampaignCommand::Create { path } => create_campaign_command(&path).await,
+        CampaignCommand::Status { campaign_id } => {
+            let status = cloud_client()?.get_fuzz_campaign(campaign_id).await?;
+            if matches!(
+                status.state,
+                FuzzCampaignState::Complete | FuzzCampaignState::Cancelled
+            ) {
+                remove_campaign_grant_state(status.campaign_id)?;
+            }
+            stdout_line(format_args!(
+                "{}\t{}\t{} scheduled\t{} found\t{} verified",
+                status.campaign_id,
+                campaign_state_label(status.state),
+                status.cases_scheduled,
+                status.cases_found,
+                status.cases_verified
+            ))
+        }
+        CampaignCommand::Cancel { campaign_id } => {
+            let status = cloud_client()?.cancel_fuzz_campaign(campaign_id).await?;
+            remove_campaign_grant_state(status.campaign_id)?;
+            stdout_line(format_args!(
+                "Campaign {} is {}.",
+                status.campaign_id,
+                campaign_state_label(status.state)
+            ))
+        }
+    }
+}
+
+const fn campaign_state_label(state: FuzzCampaignState) -> &'static str {
+    match state {
+        FuzzCampaignState::Created => "CREATED",
+        FuzzCampaignState::Running => "RUNNING",
+        FuzzCampaignState::Stopping => "STOPPING",
+        FuzzCampaignState::Complete => "COMPLETE",
+        FuzzCampaignState::Cancelled => "CANCELLED",
+    }
+}
+
+async fn create_campaign_command(path: &Path) -> Result<(), Error> {
+    let description = run_fuzzer_command("describe", path)?;
+    let request: FuzzCampaignCreate = canonical::parse_strict(&description)?;
+    if canonical::canonical_bytes(&request)? != description {
+        return Err(Error::schema_invalid());
+    }
+    let fuzzer_program = fuzzer_program()?;
+    let production_authorization = optional_secret("REPROIT_FUZZ_PRODUCTION_CAPABILITY")?;
+    let mut seed_bytes = [0_u8; 8];
+    getrandom::fill(&mut seed_bytes).map_err(|_| evaluation_error())?;
+    let (cloud, origin, bearer_token) = campaign_cloud_client()?;
+    let created = cloud
+        .create_fuzz_campaign(request.project_id, &request)
+        .await?;
+    let launch = FuzzerLaunchRequest {
+        bearer_token,
+        campaign_grant: created.campaign_grant.clone(),
+        cloud_origin: origin,
+        format: "reproit.fuzz-launch.v1",
+        production_authorization,
+        seed: u64::from_le_bytes(seed_bytes),
+    };
+    let launch_bytes = match canonical::canonical_bytes(&launch) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            let _ = cloud.cancel_fuzz_campaign(created.campaign_id).await;
+            return Err(error);
+        }
+    };
+    if launch_bytes.len() > 32 * 1_024 {
+        let _ = cloud.cancel_fuzz_campaign(created.campaign_id).await;
+        return Err(Error::new(
+            ErrorCode::RuntimeQuota,
+            "The campaign launch request exceeds its byte limit.",
+        ));
+    }
+    if let Err(error) = save_campaign_grant_state(&created.campaign_grant) {
+        let _ = cloud.cancel_fuzz_campaign(created.campaign_id).await;
+        return Err(error);
+    }
+    let Ok(mut child) = ProcessCommand::new(fuzzer_program)
+        .arg("run")
+        .arg(path)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .spawn()
+    else {
+        let _ = remove_campaign_grant_state(created.campaign_id);
+        let _ = cloud.cancel_fuzz_campaign(created.campaign_id).await;
+        return Err(evaluation_error());
+    };
+    let write_result = child
+        .stdin
+        .take()
+        .ok_or_else(evaluation_error)
+        .and_then(|mut stdin| {
+            stdin
+                .write_all(&launch_bytes)
+                .map_err(|_| evaluation_error())
+        });
+    if let Err(error) = write_result {
+        let _ = child.kill();
+        let _ = child.wait();
+        let _ = remove_campaign_grant_state(created.campaign_id);
+        let _ = cloud.cancel_fuzz_campaign(created.campaign_id).await;
+        return Err(error);
+    }
+    stdout_line(format_args!("Campaign {} created.", created.campaign_id))?;
+    stdout_line(format_args!("Local fuzzer process {} started.", child.id()))
+}
+
+fn campaign_grant_state_path(campaign_id: FuzzCampaignId) -> Result<PathBuf, Error> {
+    let home = std::env::home_dir().ok_or_else(evaluation_error)?;
+    Ok(campaign_grant_state_path_from_home(&home, campaign_id))
+}
+
+fn campaign_grant_state_path_from_home(home: &Path, campaign_id: FuzzCampaignId) -> PathBuf {
+    #[cfg(target_os = "macos")]
+    let state_root = home
+        .join("Library")
+        .join("Application Support")
+        .join("ReproIt");
+    #[cfg(target_os = "windows")]
+    let state_root = home.join("AppData").join("Local").join("ReproIt");
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let state_root = home.join(".local").join("state").join("reproit");
+
+    state_root
+        .join(CAMPAIGN_GRANT_STATE_DIRECTORY)
+        .join(format!("{campaign_id}.json"))
+}
+
+fn save_campaign_grant_state(grant: &FuzzCampaignGrant) -> Result<(), Error> {
+    grant.validate()?;
+    let path = campaign_grant_state_path(grant.campaign_id)?;
+    write_campaign_grant_state(&path, grant)
+}
+
+fn write_campaign_grant_state(path: &Path, grant: &FuzzCampaignGrant) -> Result<(), Error> {
+    let parent = path.parent().ok_or_else(evaluation_error)?;
+    fs::create_dir_all(parent).map_err(|_| evaluation_error())?;
+    #[cfg(unix)]
+    fs::set_permissions(parent, fs::Permissions::from_mode(0o700))
+        .map_err(|_| evaluation_error())?;
+
+    let mut options = OpenOptions::new();
+    options.create_new(true).write(true);
+    #[cfg(unix)]
+    options.mode(0o600);
+    let mut file = options.open(path).map_err(|_| {
+        Error::new(
+            ErrorCode::ConfigConflict,
+            "The campaign grant state already exists or cannot be created.",
+        )
+    })?;
+    let bytes = canonical::canonical_bytes(grant)?;
+    if file
+        .write_all(&bytes)
+        .and_then(|()| file.sync_all())
+        .is_err()
+    {
+        let _ = fs::remove_file(path);
+        return Err(Error::new(
+            ErrorCode::EvaluationError,
+            "Repro It could not save the campaign grant state.",
+        ));
+    }
+    Ok(())
+}
+
+fn remove_campaign_grant_state(campaign_id: FuzzCampaignId) -> Result<(), Error> {
+    let path = campaign_grant_state_path(campaign_id)?;
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(_) => Err(Error::new(
+            ErrorCode::EvaluationError,
+            "Repro It could not remove the campaign grant state.",
+        )),
+    }
+}
+
+fn run_fuzzer_command(operation: &str, path: &Path) -> Result<Vec<u8>, Error> {
+    run_bounded_fuzzer_command(&fuzzer_program()?, operation, path, FUZZER_CONTROL_TIMEOUT)
+}
+
+fn run_bounded_fuzzer_command(
+    program: &Path,
+    operation: &str,
+    path: &Path,
+    timeout: Duration,
+) -> Result<Vec<u8>, Error> {
+    if timeout.is_zero() {
+        return Err(fuzzer_control_timeout());
+    }
+    let mut child = ProcessCommand::new(program)
+        .arg(operation)
+        .arg(path)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|_| evaluation_error())?;
+    let stdout = child.stdout.take().ok_or_else(evaluation_error)?;
+    let reader = thread::spawn(move || {
+        let mut output = Vec::new();
+        stdout.take(65_537).read_to_end(&mut output)?;
+        Ok::<_, std::io::Error>(output)
+    });
+    let deadline = Instant::now()
+        .checked_add(timeout)
+        .ok_or_else(fuzzer_control_timeout)?;
+    let status = loop {
+        if let Some(status) = child.try_wait().map_err(|_| evaluation_error())? {
+            break status;
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            let _ = reader.join();
+            return Err(fuzzer_control_timeout());
+        }
+        thread::sleep(Duration::from_millis(10));
+    };
+    let mut output = reader
+        .join()
+        .map_err(|_| evaluation_error())?
+        .map_err(|_| evaluation_error())?;
+    if !status.success() || output.len() > 65_536 {
+        return Err(Error::new(
+            ErrorCode::SchemaInvalid,
+            "The campaign file is invalid.",
+        ));
+    }
+    while output.last() == Some(&b'\n') || output.last() == Some(&b'\r') {
+        output.pop();
+    }
+    Ok(output)
+}
+
+fn fuzzer_control_timeout() -> Error {
+    Error::new(
+        ErrorCode::RuntimeQuota,
+        "The campaign validator reached its execution limit.",
+    )
+}
+
+fn fuzzer_program() -> Result<PathBuf, Error> {
+    match std::env::var_os("REPROIT_FUZZER_PATH") {
+        Some(path) if !path.is_empty() => Ok(PathBuf::from(path)),
+        Some(_) => Err(evaluation_error()),
+        None => {
+            let executable = std::env::current_exe().map_err(|_| evaluation_error())?;
+            let name = if cfg!(windows) {
+                "reproit-fuzzer.exe"
+            } else {
+                "reproit-fuzzer"
+            };
+            Ok(executable.parent().ok_or_else(evaluation_error)?.join(name))
+        }
+    }
+}
+
+fn campaign_cloud_client() -> Result<(HttpCloudClient, String, String), Error> {
+    let session = NativeCredentialStore::open()?.load()?;
+    let origin = match std::env::var("REPROIT_CLOUD_ORIGIN") {
+        Ok(origin) => origin,
+        Err(std::env::VarError::NotPresent) => OFFICIAL_CLOUD_ORIGIN.to_owned(),
+        Err(std::env::VarError::NotUnicode(_)) => return Err(Error::schema_invalid()),
+    };
+    let bearer_token = session.expose_secret().to_owned();
+    let cloud = HttpCloudClient::new(&origin, session)?;
+    Ok((cloud, origin, bearer_token))
+}
+
+fn optional_secret(name: &str) -> Result<Option<String>, Error> {
+    match std::env::var(name) {
+        Ok(value) if !value.is_empty() && value.len() <= 16_384 => Ok(Some(value)),
+        Ok(_) | Err(std::env::VarError::NotUnicode(_)) => Err(Error::schema_invalid()),
+        Err(std::env::VarError::NotPresent) => Ok(None),
     }
 }
 
@@ -372,13 +709,19 @@ async fn list_command(agent: &ProductionAgent, args: ListArgs) -> Result<(), Err
                 return Ok(());
             }
             for repro in repros {
+                let source = if let Some(campaign_id) = repro.campaign_id {
+                    format!("Fuzz campaign discovered ({campaign_id})")
+                } else {
+                    "Production discovered".to_owned()
+                };
                 stdout_line(format_args!(
-                    "{}\t{}\t{}\t{}\t{}",
+                    "{}\t{}\t{}\t{}\t{}\t{}",
                     repro.repro_id,
                     priority_label(repro.priority),
                     workflow_label(repro.workflow),
                     repro.assignee_id.as_deref().unwrap_or("UNASSIGNED"),
-                    repro.failure_summary.type_name
+                    repro.failure_summary.type_name,
+                    source
                 ))?;
             }
         }
@@ -879,7 +1222,9 @@ impl From<&Command> for PublicErrorContext {
             Command::Check { .. } => Self::Check,
             Command::Login => Self::Login,
             Command::Init(_) => Self::Init,
-            Command::Keep { .. } | Command::List(_) | Command::Triage(_) => Self::Cloud,
+            Command::Campaign(_) | Command::Keep { .. } | Command::List(_) | Command::Triage(_) => {
+                Self::Cloud
+            }
             Command::Debug { .. } => Self::Source,
             Command::Gate(_) | Command::Verify { .. } => Self::Release,
             Command::Mcp | Command::Remove { .. } => Self::General,

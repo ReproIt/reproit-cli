@@ -1,8 +1,9 @@
 use std::time::Duration;
 
 use reproit_cloud_api::{
-    ConfigConflict, ManagedKeepRequest, ManagedKeepResult, ManagedOciGrant, ManagedOciGrantRequest,
-    OccurrenceList, OccurrenceListQuery, ProjectCreateRequest, ProjectCreateResult, ProjectTokenId,
+    ConfigConflict, FuzzCampaignCreate, FuzzCampaignCreated, FuzzCampaignStatus,
+    ManagedKeepRequest, ManagedKeepResult, ManagedOciGrant, ManagedOciGrantRequest, OccurrenceList,
+    OccurrenceListQuery, ProjectCreateRequest, ProjectCreateResult, ProjectTokenId,
     ProjectTokenIssueRequest, ProjectTokenIssueResult, ProjectTokenRevokeRequest,
     ProjectTokenRevokeResult, ProjectTokenRotateRequest, ProjectTokenRotateResult,
     ReleaseJobCreateRequest, ReleaseJobCreateResult, ReleaseJobDetailResponse, ReleaseJobId,
@@ -12,6 +13,7 @@ use reproit_cloud_api::{
 use reproit_core::{
     Error, ErrorCode, canonical,
     identity::{ProjectId, ReproId},
+    model::Validate,
 };
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Serialize, de::DeserializeOwned};
@@ -92,6 +94,58 @@ impl HttpCloudClient {
             )
             .await?;
         result.validate()?;
+        Ok(result)
+    }
+
+    pub async fn create_fuzz_campaign(
+        &self,
+        project_id: ProjectId,
+        request: &FuzzCampaignCreate,
+    ) -> Result<FuzzCampaignCreated, Error> {
+        request.validate()?;
+        if request.project_id != project_id {
+            return Err(Error::schema_invalid());
+        }
+        let result: FuzzCampaignCreated = self
+            .send_json(
+                reqwest::Method::POST,
+                &format!("/v1/projects/{project_id}/fuzz-campaigns"),
+                request,
+            )
+            .await?;
+        result.validate()?;
+        Ok(result)
+    }
+
+    pub async fn get_fuzz_campaign(
+        &self,
+        campaign_id: reproit_core::identity::FuzzCampaignId,
+    ) -> Result<FuzzCampaignStatus, Error> {
+        let result: FuzzCampaignStatus = self
+            .get_json(&format!("/v1/fuzz-campaigns/{campaign_id}"), &[(); 0])
+            .await?;
+        result.validate()?;
+        if result.campaign_id != campaign_id {
+            return Err(Error::schema_invalid());
+        }
+        Ok(result)
+    }
+
+    pub async fn cancel_fuzz_campaign(
+        &self,
+        campaign_id: reproit_core::identity::FuzzCampaignId,
+    ) -> Result<FuzzCampaignStatus, Error> {
+        let result: FuzzCampaignStatus = self
+            .send_json(
+                reqwest::Method::POST,
+                &format!("/v1/fuzz-campaigns/{campaign_id}/cancel"),
+                &[(); 0],
+            )
+            .await?;
+        result.validate()?;
+        if result.campaign_id != campaign_id {
+            return Err(Error::schema_invalid());
+        }
         Ok(result)
     }
 
