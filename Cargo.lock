@@ -1959,11 +1959,12 @@ dependencies = [
 [[package]]
 name = "reproit-experiments"
 version = "0.1.0"
-source = "git+https://github.com/ReproIt/reproit-experiments?rev=74ac725a41b0224fe008d49dc9e01a1f9e6a30f3#74ac725a41b0224fe008d49dc9e01a1f9e6a30f3"
+source = "git+https://github.com/ReproIt/reproit-experiments?rev=53e5f3b56e105dd6754c9add618a88996654094e#53e5f3b56e105dd6754c9add618a88996654094e"
 dependencies = [
- "reproit-core 1.0.0 (git+https://github.com/ReproIt/reproit-core?rev=437c899713c43e41f235a493ef04b084b3953d43)",
+ "reproit-core 1.0.0 (git+https://github.com/ReproIt/reproit-core?rev=e8d4b9be18aad9d94aae530b076339c4c795f8e5)",
  "serde",
  "serde_json",
+ "sha2 0.11.0",
 ]
 
 [[package]]

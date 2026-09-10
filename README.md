@@ -88,4 +88,5 @@ Run the complete repository check:
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) before you change public command behavior.
 
-The release-gate integration pins the Experiments and ML repositories to exact Git revisions.
+The release-gate integration pins Experiments and ML to exact Git revisions.
+Source builds do not require adjacent checkouts of either repository.

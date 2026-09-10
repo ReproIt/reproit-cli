@@ -36,7 +36,7 @@ reproit-cloud-api = { git = "https://github.com/ReproIt/reproit-core", rev = "e8
 reproit-core = { git = "https://github.com/ReproIt/reproit-core", rev = "e8d4b9be18aad9d94aae530b076339c4c795f8e5" }
 reproit-worker = { git = "https://github.com/ReproIt/reproit-core", rev = "e8d4b9be18aad9d94aae530b076339c4c795f8e5" }
 
-reproit-experiments = { git = "https://github.com/ReproIt/reproit-experiments", rev = "74ac725a41b0224fe008d49dc9e01a1f9e6a30f3" }
+reproit-experiments = { git = "https://github.com/ReproIt/reproit-experiments", rev = "53e5f3b56e105dd6754c9add618a88996654094e" }
 reproit-ml = { git = "https://github.com/ReproIt/reproit-ml", rev = "c21c7394a52911eb6dba865967a1e3a709516d8a" }
 
 [workspace.lints.rust]

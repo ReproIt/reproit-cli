@@ -14,9 +14,9 @@ if rg -n '^\[patch\.crates-io\]' "$repository_root"; then
   exit 1
 fi
 
-if rg -n 'reproit-(core|backend|cloud-api|worker)\s*=.*path\s*=' \
+if rg -n 'reproit-(core|backend|cloud-api|worker|experiments)\s*=.*path\s*=' \
   "$repository_root"/Cargo.toml "$repository_root"/crates/*/Cargo.toml; then
-  echo "Repro It Core dependencies must use the exact shared revision." >&2
+  echo "Shared Repro It dependencies must use exact Git revisions." >&2
   exit 1
 fi
 
