@@ -10,12 +10,14 @@ use reproit_app::{
         AgentOperations, CheckReprosInput, CheckReprosResult, GetReproInput, ListReprosInput,
         RunReproInput, RunReproResult, TriageReproInput,
     },
+    profiles::{AUTHORED_REPRO_CAPABILITY, ProfileCapabilityRegistry},
     remove_kept,
 };
 use reproit_core::{
     Error, ErrorCode,
     contracts::{CLOUD_API_SCHEMAS, CORE_SCHEMAS, MCP_SCHEMAS},
 };
+use reproit_experiments::CancellationFlag;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufRead, AsyncBufReadExt as _, AsyncWrite, AsyncWriteExt as _, BufReader};
@@ -24,6 +26,7 @@ use tokio::{sync::Mutex, task::JoinSet};
 use crate::{
     FilesystemRepository,
     agent::ProductionAgent,
+    authored_repro::{AddReproInput, add_repro_with_cancellation},
     render::{PublicErrorContext, structured_error},
 };
 
@@ -32,6 +35,19 @@ const MAX_REQUEST_BYTES: usize = 64 * 1024;
 const MAX_RESULT_BYTES: usize = 1024 * 1024;
 const MAX_METADATA_CALLS: usize = 32;
 const MAX_EXECUTION_CALLS: usize = 2;
+
+#[derive(Clone)]
+struct ActiveCancellation {
+    authored_repro: CancellationFlag,
+    signal: tokio::sync::watch::Sender<bool>,
+}
+
+impl ActiveCancellation {
+    fn cancel(&self) {
+        self.authored_repro.cancel();
+        let _ = self.signal.send(true);
+    }
+}
 
 pub async fn serve(root: PathBuf) -> Result<(), Error> {
     let input = BufReader::new(tokio::io::stdin());
@@ -57,10 +73,7 @@ where
     let output = Arc::new(Mutex::new(output));
     let metadata_calls = Arc::new(tokio::sync::Semaphore::new(MAX_METADATA_CALLS));
     let execution_calls = Arc::new(tokio::sync::Semaphore::new(MAX_EXECUTION_CALLS));
-    let cancellations = Arc::new(Mutex::new(BTreeMap::<
-        String,
-        tokio::sync::watch::Sender<bool>,
-    >::new()));
+    let cancellations = Arc::new(Mutex::new(BTreeMap::<String, ActiveCancellation>::new()));
     let mut tasks = JoinSet::new();
     let mut initialized = false;
     loop {
@@ -89,8 +102,9 @@ where
             }
         };
         if let Some(request_id) = cancellation_identity(&request) {
-            if let Some(cancelled) = cancellations.lock().await.get(&request_id) {
-                let _ = cancelled.send(true);
+            let active = cancellations.lock().await.get(&request_id).cloned();
+            if let Some(active) = active {
+                active.cancel();
             }
             continue;
         }
@@ -110,10 +124,14 @@ where
             };
             let request_id = request_identity(&id);
             let (cancelled, mut cancellation) = tokio::sync::watch::channel(false);
+            let authored_cancellation = CancellationFlag::new();
             if !register_active_request(
                 &mut *cancellations.lock().await,
                 request_id.clone(),
-                cancelled,
+                ActiveCancellation {
+                    authored_repro: authored_cancellation.clone(),
+                    signal: cancelled,
+                },
             ) {
                 write_locked(
                     &output,
@@ -134,6 +152,7 @@ where
                         root.as_ref(),
                         &mut task_initialized,
                         request,
+                        authored_cancellation,
                     ) => response,
                     result = cancellation.changed() => {
                         let _ = result;
@@ -152,8 +171,14 @@ where
             });
             continue;
         }
-        if let Some(response) =
-            handle_request(agent.as_ref(), root.as_ref(), &mut initialized, request).await
+        if let Some(response) = handle_request(
+            agent.as_ref(),
+            root.as_ref(),
+            &mut initialized,
+            request,
+            CancellationFlag::new(),
+        )
+        .await
         {
             write_locked(&output, response).await?;
         }
@@ -193,20 +218,20 @@ fn tool_call_identity(request: &Value) -> Option<(Value, bool)> {
     let name = object.get("params")?.get("name")?.as_str()?;
     let execution = matches!(
         name,
-        "triage_repro" | "run_repro" | "check_repros" | "keep_repro" | "remove_repro"
+        "add_repro" | "triage_repro" | "run_repro" | "check_repros" | "keep_repro" | "remove_repro"
     );
     Some((id, execution))
 }
 
 fn register_active_request(
-    active: &mut BTreeMap<String, tokio::sync::watch::Sender<bool>>,
+    active: &mut BTreeMap<String, ActiveCancellation>,
     request_id: String,
-    cancelled: tokio::sync::watch::Sender<bool>,
+    cancellation: ActiveCancellation,
 ) -> bool {
     if active.contains_key(&request_id) {
         return false;
     }
-    active.insert(request_id, cancelled);
+    active.insert(request_id, cancellation);
     true
 }
 
@@ -222,6 +247,7 @@ async fn handle_request(
     root: &std::path::Path,
     initialized: &mut bool,
     request: Value,
+    cancellation: CancellationFlag,
 ) -> Option<Value> {
     let Some(object) = request.as_object() else {
         return Some(protocol_error(Value::Null, -32600, "Invalid request."));
@@ -269,7 +295,10 @@ async fn handle_request(
         "tools/list" => Some(success(response_id, json!({"tools": tools()}))),
         "tools/call" => {
             let params = object.get("params").cloned().unwrap_or(Value::Null);
-            Some(success(response_id, call_tool(agent, root, params).await))
+            Some(success(
+                response_id,
+                call_tool(agent, root, params, cancellation).await,
+            ))
         }
         _ => Some(protocol_error(
             response_id,
@@ -286,12 +315,37 @@ struct ToolCall {
     name: String,
 }
 
-async fn call_tool(agent: &impl AgentOperations, root: &std::path::Path, params: Value) -> Value {
+async fn call_tool(
+    agent: &impl AgentOperations,
+    root: &std::path::Path,
+    params: Value,
+    cancellation: CancellationFlag,
+) -> Value {
     let call: ToolCall = match serde_json::from_value(params) {
         Ok(call) => call,
         Err(_) => return tool_error(safe_error(Error::schema_invalid())),
     };
     match call.name.as_str() {
+        "add_repro" => {
+            let input =
+                match validated_input::<AddReproInput>(call.arguments, AddReproInput::validate) {
+                    Ok(input) => input,
+                    Err(error) => return tool_error(error),
+                };
+            let root = root.to_owned();
+            let result = tokio::task::spawn_blocking(move || {
+                add_repro_with_cancellation(&root, &input, &cancellation)
+            })
+            .await
+            .map_err(|_| {
+                Error::new(
+                    ErrorCode::EvaluationError,
+                    "The authored Repro task stopped.",
+                )
+            })
+            .and_then(std::convert::identity);
+            tool_result(result.map_err(safe_error))
+        }
         "list_repros" => {
             let input = match validated_input::<ListReprosInput>(call.arguments, |input| {
                 input.validate()
@@ -420,7 +474,11 @@ fn safe_check_result(mut result: CheckReprosResult) -> CheckReprosResult {
 }
 
 fn tools() -> Vec<Value> {
-    [
+    tools_for(ProfileCapabilityRegistry::installed())
+}
+
+fn tools_for(registry: ProfileCapabilityRegistry) -> Vec<Value> {
+    let mut tools = [
         (
             "list_repros",
             "List visible or kept Repros.",
@@ -473,7 +531,96 @@ fn tools() -> Vec<Value> {
             "outputSchema": schema(output)
         })
     })
-    .collect()
+    .collect::<Vec<_>>();
+    if registry.has_capability(AUTHORED_REPRO_CAPABILITY) {
+        tools.push(json!({
+            "name": "add_repro",
+            "description": "Verify and seal one portable research recipe.",
+            "inputSchema": add_repro_input_schema(),
+            "outputSchema": add_repro_output_schema()
+        }));
+        tools.sort_by(|left, right| left["name"].as_str().cmp(&right["name"].as_str()));
+    }
+    tools
+}
+
+fn add_repro_input_schema() -> Value {
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$defs": {},
+        "additionalProperties": false,
+        "properties": {
+            "definition_path": {"maxLength": 512, "minLength": 1, "type": "string"}
+        },
+        "required": ["definition_path"],
+        "type": "object"
+    })
+}
+
+fn add_repro_output_schema() -> Value {
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$defs": {},
+        "additionalProperties": false,
+        "properties": {
+            "capsule_digest": {
+                "pattern": "^sha256:[0-9a-f]{64}$",
+                "type": "string"
+            },
+            "claim_digest": {
+                "pattern": "^sha256:[0-9a-f]{64}$",
+                "type": "string"
+            },
+            "next_command": {"maxLength": 256, "minLength": 1, "type": "string"},
+            "observed_results": {
+                "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                        "criterion_id": {"maxLength": 128, "minLength": 1, "type": "string"},
+                        "expected_maximum": {"maximum": 1_000_000_000, "minimum": 1, "type": "integer"},
+                        "expected_minimum": {"maximum": 1_000_000_000, "minimum": 1, "type": "integer"},
+                        "observed_maximum": {"maximum": 1_000_000_000, "minimum": 1, "type": "integer"},
+                        "observed_median": {"maximum": 1_000_000_000, "minimum": 1, "type": "integer"},
+                        "observed_minimum": {"maximum": 1_000_000_000, "minimum": 1, "type": "integer"},
+                        "unit": {"maxLength": 256, "minLength": 1, "type": "string"}
+                    },
+                    "required": [
+                        "criterion_id",
+                        "expected_maximum",
+                        "expected_minimum",
+                        "observed_maximum",
+                        "observed_median",
+                        "observed_minimum",
+                        "unit"
+                    ],
+                    "type": "object"
+                },
+                "maxItems": 64,
+                "minItems": 1,
+                "type": "array"
+            },
+            "profile": {"const": "experiments"},
+            "repro_id": {
+                "pattern": "^rpr_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                "type": "string"
+            },
+            "tracked_reference_path": {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+            }
+        },
+        "required": [
+            "capsule_digest",
+            "claim_digest",
+            "next_command",
+            "observed_results",
+            "profile",
+            "repro_id",
+            "tracked_reference_path"
+        ],
+        "type": "object"
+    })
 }
 
 fn schema(name: &str) -> Value {
@@ -553,11 +700,38 @@ fn standalone_schema(name: &str) -> Value {
         rewrite_schema_references(&mut definition, source, &mut pending);
         definitions.insert(local_name, definition);
     }
+    if name == "check_repros_result" {
+        extend_check_result_schema(&mut definitions);
+    }
     json!({
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$ref": format!("#/$defs/{}", local_definition_name(SchemaSource::Mcp, name)),
         "$defs": definitions
     })
+}
+
+fn extend_check_result_schema(definitions: &mut serde_json::Map<String, Value>) {
+    let check = definitions
+        .get_mut("mcp__check_result")
+        .expect("check result schema");
+    check["oneOf"][0]["properties"]["status"]["enum"] = json!(["PASS", "REGRESSION", "UNKNOWN"]);
+    check["properties"]["status"]["enum"] = json!(["PASS", "REGRESSION", "UNKNOWN", "ERROR"]);
+
+    let result = definitions
+        .get_mut("mcp__check_repros_result")
+        .expect("check Repros result schema");
+    result["properties"]["unknown_count"] =
+        json!({"maximum": 10000, "minimum": 0, "type": "integer"});
+    result["properties"]["unknowns"] = json!({
+        "items": {"$ref": "#/$defs/mcp__check_result"},
+        "maxItems": 100,
+        "type": "array"
+    });
+    let required = result["required"]
+        .as_array_mut()
+        .expect("check Repros required properties");
+    required.push(Value::String("unknown_count".to_owned()));
+    required.push(Value::String("unknowns".to_owned()));
 }
 
 fn rewrite_schema_references(
@@ -767,7 +941,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn server_initializes_and_lists_the_seven_contract_tools() {
+    async fn server_initializes_and_lists_the_installed_tools() {
         let requests = concat!(
             "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}\n",
             "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n",
@@ -787,7 +961,24 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(responses.len(), 2);
         let tools = responses[1]["result"]["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), 7);
+        let expected_tool_count = if cfg!(any(
+            target_os = "macos",
+            target_os = "linux",
+            target_os = "windows"
+        )) {
+            8
+        } else {
+            7
+        };
+        assert_eq!(tools.len(), expected_tool_count);
+        assert_eq!(
+            tools.iter().any(|tool| tool["name"] == "add_repro"),
+            cfg!(any(
+                target_os = "macos",
+                target_os = "linux",
+                target_os = "windows"
+            ))
+        );
         assert!(tools.iter().any(|tool| tool["name"] == "remove_repro"));
     }
 
@@ -832,6 +1023,7 @@ mod tests {
                     "workflow": ["OPEN", "REGRESSED"]
                 }
             }),
+            CancellationFlag::new(),
         )
         .await;
         assert_eq!(result["structuredContent"]["scope"], "cloud");
@@ -856,9 +1048,35 @@ mod tests {
     fn schema_tools_use_the_normative_machine_contract() {
         for tool in tools() {
             let name = tool["name"].as_str().unwrap();
-            assert_eq!(tool["inputSchema"], schema(&format!("{name}_input")));
-            assert_eq!(tool["outputSchema"], schema(&format!("{name}_result")));
+            if name == "add_repro" {
+                assert_eq!(tool["inputSchema"], add_repro_input_schema());
+                assert_eq!(tool["outputSchema"], add_repro_output_schema());
+            } else {
+                assert_eq!(tool["inputSchema"], schema(&format!("{name}_input")));
+                assert_eq!(tool["outputSchema"], schema(&format!("{name}_result")));
+            }
         }
+    }
+
+    #[test]
+    fn authored_tool_is_hidden_without_the_capability() {
+        let tools = tools_for(ProfileCapabilityRegistry::empty());
+        assert_eq!(tools.len(), 7);
+        assert!(!tools.iter().any(|tool| tool["name"] == "add_repro"));
+    }
+
+    #[test]
+    fn check_schema_declares_the_unknown_outcome() {
+        let schema = schema("check_repros_result");
+        assert_eq!(
+            schema["$defs"]["mcp__check_result"]["properties"]["status"]["enum"],
+            json!(["PASS", "REGRESSION", "UNKNOWN", "ERROR"])
+        );
+        assert!(
+            schema["$defs"]["mcp__check_repros_result"]["properties"]
+                .get("unknowns")
+                .is_some()
+        );
     }
 
     #[test]
@@ -909,20 +1127,30 @@ mod tests {
     fn duplicate_request_id_does_not_replace_the_active_cancellation() {
         let (original, original_receiver) = tokio::sync::watch::channel(false);
         let (duplicate, duplicate_receiver) = tokio::sync::watch::channel(false);
+        let original_authored = CancellationFlag::new();
+        let duplicate_authored = CancellationFlag::new();
         let mut active = BTreeMap::new();
         assert!(register_active_request(
             &mut active,
             "1".to_owned(),
-            original,
+            ActiveCancellation {
+                authored_repro: original_authored.clone(),
+                signal: original,
+            },
         ));
         assert!(!register_active_request(
             &mut active,
             "1".to_owned(),
-            duplicate,
+            ActiveCancellation {
+                authored_repro: duplicate_authored.clone(),
+                signal: duplicate,
+            },
         ));
-        active["1"].send(true).unwrap();
+        active["1"].cancel();
         assert!(*original_receiver.borrow());
         assert!(!*duplicate_receiver.borrow());
+        assert!(original_authored.is_cancelled());
+        assert!(!duplicate_authored.is_cancelled());
     }
 
     #[test]

@@ -259,6 +259,7 @@ impl CheckReprosInput {
 pub enum CheckStatus {
     Pass,
     Regression,
+    Unknown,
     Error,
 }
 
@@ -272,9 +273,8 @@ pub struct AgentCheckResult {
 impl AgentCheckResult {
     pub fn validate(&self) -> Result<(), Error> {
         match (self.status, &self.error) {
-            (CheckStatus::Pass | CheckStatus::Regression, None) | (CheckStatus::Error, Some(_)) => {
-                Ok(())
-            }
+            (CheckStatus::Pass | CheckStatus::Regression | CheckStatus::Unknown, None)
+            | (CheckStatus::Error, Some(_)) => Ok(()),
             _ => Err(Error::schema_invalid()),
         }
     }
@@ -288,6 +288,8 @@ pub struct CheckReprosResult {
     pub pass_count: usize,
     pub regression_count: usize,
     pub regressions: Vec<AgentCheckResult>,
+    pub unknown_count: usize,
+    pub unknowns: Vec<AgentCheckResult>,
 }
 
 impl CheckReprosResult {
@@ -299,6 +301,8 @@ impl CheckReprosResult {
             pass_count: 0,
             regression_count: 0,
             regressions: Vec::new(),
+            unknown_count: 0,
+            unknowns: Vec::new(),
         }
     }
 
@@ -317,6 +321,12 @@ impl CheckReprosResult {
                 self.regression_count += 1;
                 if self.regressions.len() < MAX_TOOL_RESULTS {
                     self.regressions.push(result);
+                }
+            }
+            CheckStatus::Unknown => {
+                self.unknown_count += 1;
+                if self.unknowns.len() < MAX_TOOL_RESULTS {
+                    self.unknowns.push(result);
                 }
             }
             CheckStatus::Error => {
@@ -344,15 +354,19 @@ impl CheckReprosResult {
         if self.checked_count > MAX_KEPT_REFERENCES
             || self.pass_count > self.checked_count
             || self.regression_count > self.checked_count
+            || self.unknown_count > self.checked_count
             || self.error_count > self.checked_count
             || self
                 .pass_count
                 .checked_add(self.regression_count)
+                .and_then(|count| count.checked_add(self.unknown_count))
                 .and_then(|count| count.checked_add(self.error_count))
                 != Some(self.checked_count)
             || self.regressions.len() > MAX_TOOL_RESULTS
+            || self.unknowns.len() > MAX_TOOL_RESULTS
             || self.errors.len() > MAX_TOOL_RESULTS
             || self.regressions.len() > self.regression_count
+            || self.unknowns.len() > self.unknown_count
             || self.errors.len() > self.error_count
         {
             return Err(Error::schema_invalid());
@@ -369,7 +383,18 @@ impl CheckReprosResult {
             }
             result.validate()?;
         }
-        if !unique_check_ids(self.regressions.iter().chain(&self.errors)) {
+        for result in &self.unknowns {
+            if result.status != CheckStatus::Unknown {
+                return Err(Error::schema_invalid());
+            }
+            result.validate()?;
+        }
+        if !unique_check_ids(
+            self.regressions
+                .iter()
+                .chain(&self.unknowns)
+                .chain(&self.errors),
+        ) {
             return Err(Error::schema_invalid());
         }
         Ok(())
@@ -436,10 +461,11 @@ mod tests {
     #[test]
     fn check_summary_retains_only_bounded_failures_and_errors() {
         let mut summary = CheckReprosResult::empty();
-        for index in 0..250_u16 {
-            let status = match index % 3 {
+        for index in 0..252_u16 {
+            let status = match index % 4 {
                 0 => CheckStatus::Pass,
                 1 => CheckStatus::Regression,
+                2 => CheckStatus::Unknown,
                 _ => CheckStatus::Error,
             };
             summary
@@ -450,12 +476,14 @@ mod tests {
                 })
                 .expect("bounded result");
         }
-        assert_eq!(summary.checked_count, 250);
-        assert_eq!(summary.pass_count, 84);
-        assert_eq!(summary.regression_count, 83);
-        assert_eq!(summary.error_count, 83);
-        assert_eq!(summary.regressions.len(), 83);
-        assert_eq!(summary.errors.len(), 83);
+        assert_eq!(summary.checked_count, 252);
+        assert_eq!(summary.pass_count, 63);
+        assert_eq!(summary.regression_count, 63);
+        assert_eq!(summary.unknown_count, 63);
+        assert_eq!(summary.error_count, 63);
+        assert_eq!(summary.regressions.len(), 63);
+        assert_eq!(summary.unknowns.len(), 63);
+        assert_eq!(summary.errors.len(), 63);
         summary.validate().expect("valid summary");
     }
 
@@ -468,6 +496,8 @@ mod tests {
             pass_count: MAX_KEPT_REFERENCES,
             regression_count: 0,
             regressions: Vec::new(),
+            unknown_count: 0,
+            unknowns: Vec::new(),
         };
         let error = summary
             .record(AgentCheckResult {
@@ -492,6 +522,8 @@ mod tests {
                 repro_id: repro_id(1),
                 status: CheckStatus::Pass,
             }],
+            unknown_count: 0,
+            unknowns: Vec::new(),
         };
         assert_eq!(
             summary.validate().expect_err("mismatch must fail").code,

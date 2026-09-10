@@ -25,6 +25,7 @@ use secrecy::ExposeSecret as _;
 
 use crate::{
     FilesystemRepository, GitSourceWorkspace, NativeCredentialStore, SourceCheckout,
+    authored_repro::{AuthoredCheckOutcome, authored_repro_ids, check_authored_repro},
     cloud::HttpCloudClient,
     current_project_source,
     executor_control::{
@@ -317,6 +318,13 @@ impl ProductionAgent {
     }
 
     async fn check_one(&self, repro_id: ReproId) -> Result<CheckStatus, Error> {
+        if let Some(outcome) = check_authored_repro(&self.root, repro_id)? {
+            return Ok(match outcome.outcome {
+                AuthoredCheckOutcome::Pass => CheckStatus::Pass,
+                AuthoredCheckOutcome::Regression => CheckStatus::Regression,
+                AuthoredCheckOutcome::Unknown => CheckStatus::Unknown,
+            });
+        }
         let result = self
             .run_inner(RunReproInput {
                 repro_id,
@@ -337,12 +345,24 @@ impl ProductionAgent {
     ) -> Result<CheckReprosResult, Error> {
         input.validate()?;
         let repro_ids = if input.repro_ids.is_empty() {
-            let project = self.repository().read_project()?;
-            require_managed_project(&project)?;
-            list_kept(&self.repository())?
-                .into_iter()
-                .map(|reference| reference.repro_id)
-                .collect()
+            let mut repro_ids = authored_repro_ids(&self.root)?;
+            repro_ids.extend(
+                list_kept(&self.repository())?
+                    .into_iter()
+                    .map(|reference| reference.repro_id),
+            );
+            repro_ids.sort_unstable();
+            if repro_ids.windows(2).any(|pair| pair[0] == pair[1]) {
+                return Err(Error::new(
+                    ErrorCode::ConfigConflict,
+                    "More than one tracked reference has the same Repro identity.",
+                ));
+            }
+            if repro_ids.is_empty() {
+                let project = self.repository().read_project()?;
+                require_managed_project(&project)?;
+            }
+            repro_ids
         } else {
             input.repro_ids
         };

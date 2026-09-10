@@ -104,7 +104,7 @@ fn help_is_a_process_level_pass() {
 }
 
 #[test]
-fn mcp_stdio_lists_the_seven_bounded_tools() {
+fn mcp_stdio_lists_the_bounded_tools() {
     let mut child = reproit()
         .arg("mcp")
         .stdin(Stdio::piped())
@@ -137,26 +137,58 @@ fn mcp_stdio_lists_the_seven_bounded_tools() {
     let tools = responses[1]["result"]["tools"]
         .as_array()
         .expect("MCP tools");
-    assert_eq!(tools.len(), 7);
+    let expected_tool_count = if cfg!(any(
+        target_os = "macos",
+        target_os = "linux",
+        target_os = "windows"
+    )) {
+        8
+    } else {
+        7
+    };
+    assert_eq!(tools.len(), expected_tool_count);
+    assert_eq!(
+        tools.iter().any(|tool| tool["name"] == "add_repro"),
+        cfg!(any(
+            target_os = "macos",
+            target_os = "linux",
+            target_os = "windows"
+        ))
+    );
     assert!(tools.iter().any(|tool| tool["name"] == "remove_repro"));
 }
 
 #[test]
-fn public_command_surface_contains_the_twelve_contract_commands() {
+fn public_command_surface_contains_the_platform_contract_commands() {
     let output = reproit().arg("--help").output().expect("run CLI help");
     assert_eq!(output.status.code(), Some(0));
     assert!(output.stderr.is_empty());
     let help = String::from_utf8(output.stdout).expect("UTF-8 help");
-    for command in [
+    let mut commands = vec![
         "campaign", "login", "init", "list", "triage", "debug", "check", "gate", "keep", "mcp",
         "remove", "verify",
-    ] {
+    ];
+    if cfg!(any(
+        target_os = "macos",
+        target_os = "linux",
+        target_os = "windows"
+    )) {
+        commands.push("add");
+    }
+    for command in commands {
         assert!(help.contains(&format!("  {command}")), "missing {command}");
+    }
+    if !cfg!(any(
+        target_os = "macos",
+        target_os = "linux",
+        target_os = "windows"
+    )) {
+        assert!(!help.contains("  add"));
     }
     assert!(!help.contains("  link"));
     assert!(!help.contains("  help"));
 
-    for arguments in [
+    let mut help_arguments = vec![
         &["campaign", "--help"][..],
         &["login", "--help"][..],
         &["init", "--help"],
@@ -169,7 +201,15 @@ fn public_command_surface_contains_the_twelve_contract_commands() {
         &["mcp", "--help"],
         &["remove", "--help"],
         &["verify", "--help"],
-    ] {
+    ];
+    if cfg!(any(
+        target_os = "macos",
+        target_os = "linux",
+        target_os = "windows"
+    )) {
+        help_arguments.push(&["add", "--help"]);
+    }
+    for arguments in help_arguments {
         let output = reproit()
             .args(arguments)
             .output()

@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 pub mod agent;
+pub mod profiles;
 
 use std::collections::BTreeSet;
 

@@ -44,8 +44,10 @@ pub struct SourceCheckout {
 }
 
 pub fn current_git_repository(path: &Path) -> Result<GitRepositoryIdentity, Error> {
-    let root = PathBuf::from(git_output(path, &["rev-parse", "--show-toplevel"])?);
-    if !root.is_absolute() || !root.is_dir() || !path.starts_with(&root) {
+    let requested = fs::canonicalize(path).map_err(|_| source_denied())?;
+    let reported = PathBuf::from(git_output(&requested, &["rev-parse", "--show-toplevel"])?);
+    let root = fs::canonicalize(reported).map_err(|_| source_denied())?;
+    if !root.is_absolute() || !root.is_dir() || !requested.starts_with(&root) {
         return Err(source_denied());
     }
     let remote = "origin".to_owned();

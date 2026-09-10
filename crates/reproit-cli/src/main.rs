@@ -1,15 +1,12 @@
 use std::{
     collections::BTreeSet,
-    fs::{self, OpenOptions},
     io::{Read as _, Write as _},
     path::{Path, PathBuf},
     process::{Command as ProcessCommand, ExitCode, Stdio},
+    str::FromStr,
     thread,
     time::{Duration, Instant},
 };
-
-#[cfg(unix)]
-use std::os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _};
 
 mod capture_detection;
 mod capture_probe;
@@ -34,6 +31,9 @@ use reproit_app::{
 };
 use reproit_backend::config::{BackendSdk, ProjectConfig, ProjectSourceConfig, RunSpec};
 use reproit_cli::agent::ProductionAgent;
+use reproit_cli::authored_repro::{
+    AuthoredCheckOutcome, AuthoredObservedResult, check_authored_repro,
+};
 use reproit_cli::cloud::HttpCloudClient;
 use reproit_cli::render::{PublicErrorContext, render_error, stderr_line, stdout_line};
 use reproit_cli::{
@@ -41,23 +41,25 @@ use reproit_cli::{
     initialization::{InitializationDirectory, InitializationService},
 };
 use reproit_cloud_api::{
-    FuzzCampaignCreate, FuzzCampaignGrant, Priority, ServiceCatalogQuery, Workflow,
+    FuzzCampaignCreate, FuzzCampaignGrant, FuzzCampaignGrantFormat, Priority, ServiceCatalogQuery,
+    Workflow,
 };
 use reproit_core::{
     Error, ErrorCode, canonical,
     identity::{FuzzCampaignId, ReproId},
-    model::{FuzzCampaignState, Validate},
+    model::DiscoverySource,
 };
-use secrecy::ExposeSecret as _;
 use serde::Serialize;
+use time::{Duration as TimeDuration, OffsetDateTime, format_description::well_known::Rfc3339};
+use uuid::Uuid;
 
 use capture_detection::{ReleasedSdkDeclaration, normalize_startup_run, released_sdk};
 
 const OFFICIAL_CLOUD_ORIGIN: &str = "https://cloud.reproit.com";
 const SERVICE_CATALOG_PAGE_SIZE: u8 = 50;
 const MAX_SERVICE_CATALOG_PAGES: usize = 6;
-const CAMPAIGN_GRANT_STATE_DIRECTORY: &str = "fuzz-campaigns";
 const FUZZER_CONTROL_TIMEOUT: Duration = Duration::from_secs(30);
+const MAX_CANONICAL_INTEGER: u64 = 9_007_199_254_740_991;
 
 #[derive(Parser)]
 #[command(
@@ -79,18 +81,32 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+    Add {
+        definition_path: PathBuf,
+    },
     Campaign(CampaignArgs),
     Login,
     Init(InitArgs),
     List(ListArgs),
     Triage(TriageArgs),
-    Debug { repro_id: ReproId },
-    Check { repro_id: Option<ReproId> },
+    Debug {
+        repro_id: ReproId,
+    },
+    Check {
+        repro_id: Option<ReproId>,
+    },
     Gate(GateArgs),
-    Keep { repro_id: ReproId },
+    Keep {
+        repro_id: ReproId,
+    },
     Mcp,
-    Remove { repro_id: ReproId },
-    Verify { bundle_path: PathBuf },
+    Remove {
+        repro_id: ReproId,
+    },
+    Verify {
+        bundle_path: PathBuf,
+    },
 }
 
 #[derive(Args)]
@@ -101,17 +117,13 @@ struct CampaignArgs {
 
 #[derive(Subcommand)]
 enum CampaignCommand {
-    Cancel { campaign_id: FuzzCampaignId },
     Create { path: PathBuf },
-    Status { campaign_id: FuzzCampaignId },
     Validate { path: PathBuf },
 }
 
 #[derive(Serialize)]
 struct FuzzerLaunchRequest {
-    bearer_token: String,
     campaign_grant: FuzzCampaignGrant,
-    cloud_origin: String,
     format: &'static str,
     production_authorization: Option<String>,
     seed: u64,
@@ -310,7 +322,18 @@ async fn run(cli: Cli) -> Result<(), Error> {
     let mut store = FilesystemRepository::new(root.clone());
     let agent = ProductionAgent::new(root.clone());
     match cli.command {
-        Command::Campaign(args) => campaign_command(args).await,
+        #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+        Command::Add { definition_path } => {
+            let input = reproit_cli::authored_repro::AddReproInput {
+                definition_path: definition_path.to_string_lossy().into_owned(),
+            };
+            let result = reproit_cli::authored_repro::add_repro(&root, &input)?;
+            stdout_line(format_args!("Added {}.", result.repro_id))?;
+            stdout_line(format_args!("Claim {}.", result.claim_digest))?;
+            print_observed_results(&result.observed_results)?;
+            stdout_line(format_args!("Run '{}'.", result.next_command))
+        }
+        Command::Campaign(args) => campaign_command(args),
         Command::Login => login_command::run().await,
         Command::Init(args) => initialize_command(&root, args).await,
         Command::List(args) => list_command(&agent, args).await,
@@ -322,98 +345,47 @@ async fn run(cli: Cli) -> Result<(), Error> {
             Ok(())
         }
         Command::Debug { repro_id } => debug_command(&agent, repro_id).await,
-        Command::Check { repro_id } => check_command(&agent, repro_id).await,
+        Command::Check { repro_id } => check_command(&root, &agent, repro_id).await,
         Command::Gate(_) | Command::Verify { .. } => Err(evaluation_error()),
         Command::Keep { repro_id } => keep_command(&agent, repro_id).await,
         Command::Mcp => reproit_cli::mcp::serve(root).await,
     }
 }
 
-async fn campaign_command(args: CampaignArgs) -> Result<(), Error> {
+fn campaign_command(args: CampaignArgs) -> Result<(), Error> {
     match args.command {
         CampaignCommand::Validate { path } => {
             run_fuzzer_command("validate", &path)?;
             stdout_line(format_args!("The campaign is valid."))
         }
-        CampaignCommand::Create { path } => create_campaign_command(&path).await,
-        CampaignCommand::Status { campaign_id } => {
-            let status = cloud_client()?.get_fuzz_campaign(campaign_id).await?;
-            if matches!(
-                status.state,
-                FuzzCampaignState::Complete | FuzzCampaignState::Cancelled
-            ) {
-                remove_campaign_grant_state(status.campaign_id)?;
-            }
-            stdout_line(format_args!(
-                "{}\t{}\t{} scheduled\t{} found\t{} verified",
-                status.campaign_id,
-                campaign_state_label(status.state),
-                status.cases_scheduled,
-                status.cases_found,
-                status.cases_verified
-            ))
-        }
-        CampaignCommand::Cancel { campaign_id } => {
-            let status = cloud_client()?.cancel_fuzz_campaign(campaign_id).await?;
-            remove_campaign_grant_state(status.campaign_id)?;
-            stdout_line(format_args!(
-                "Campaign {} is {}.",
-                status.campaign_id,
-                campaign_state_label(status.state)
-            ))
-        }
+        CampaignCommand::Create { path } => create_campaign_command(&path),
     }
 }
 
-const fn campaign_state_label(state: FuzzCampaignState) -> &'static str {
-    match state {
-        FuzzCampaignState::Created => "CREATED",
-        FuzzCampaignState::Running => "RUNNING",
-        FuzzCampaignState::Stopping => "STOPPING",
-        FuzzCampaignState::Complete => "COMPLETE",
-        FuzzCampaignState::Cancelled => "CANCELLED",
-    }
-}
-
-async fn create_campaign_command(path: &Path) -> Result<(), Error> {
+fn create_campaign_command(path: &Path) -> Result<(), Error> {
     let description = run_fuzzer_command("describe", path)?;
     let request: FuzzCampaignCreate = canonical::parse_strict(&description)?;
-    if canonical::canonical_bytes(&request)? != description {
+    let canonical_request = canonical::canonical_bytes(&request)?;
+    if canonical_request != description {
         return Err(Error::schema_invalid());
     }
     let fuzzer_program = fuzzer_program()?;
     let production_authorization = optional_secret("REPROIT_FUZZ_PRODUCTION_CAPABILITY")?;
     let mut seed_bytes = [0_u8; 8];
     getrandom::fill(&mut seed_bytes).map_err(|_| evaluation_error())?;
-    let (cloud, origin, bearer_token) = campaign_cloud_client()?;
-    let created = cloud
-        .create_fuzz_campaign(request.project_id, &request)
-        .await?;
+    let grant = local_campaign_grant(&request)?;
     let launch = FuzzerLaunchRequest {
-        bearer_token,
-        campaign_grant: created.campaign_grant.clone(),
-        cloud_origin: origin,
+        campaign_grant: grant,
         format: "reproit.fuzz-launch.v1",
         production_authorization,
-        seed: u64::from_le_bytes(seed_bytes),
+        seed: u64::from_le_bytes(seed_bytes) % MAX_CANONICAL_INTEGER,
     };
-    let launch_bytes = match canonical::canonical_bytes(&launch) {
-        Ok(bytes) => bytes,
-        Err(error) => {
-            let _ = cloud.cancel_fuzz_campaign(created.campaign_id).await;
-            return Err(error);
-        }
-    };
+    let launch_bytes = canonical::canonical_bytes(&launch)?;
     if launch_bytes.len() > 32 * 1_024 {
-        let _ = cloud.cancel_fuzz_campaign(created.campaign_id).await;
         return Err(Error::new(
             ErrorCode::RuntimeQuota,
             "The campaign launch request exceeds its byte limit.",
         ));
-    }
-    if let Err(error) = save_campaign_grant_state(&created.campaign_grant) {
-        let _ = cloud.cancel_fuzz_campaign(created.campaign_id).await;
-        return Err(error);
     }
     let Ok(mut child) = ProcessCommand::new(fuzzer_program)
         .arg("run")
@@ -423,8 +395,6 @@ async fn create_campaign_command(path: &Path) -> Result<(), Error> {
         .stderr(Stdio::inherit())
         .spawn()
     else {
-        let _ = remove_campaign_grant_state(created.campaign_id);
-        let _ = cloud.cancel_fuzz_campaign(created.campaign_id).await;
         return Err(evaluation_error());
     };
     let write_result = child
@@ -439,83 +409,34 @@ async fn create_campaign_command(path: &Path) -> Result<(), Error> {
     if let Err(error) = write_result {
         let _ = child.kill();
         let _ = child.wait();
-        let _ = remove_campaign_grant_state(created.campaign_id);
-        let _ = cloud.cancel_fuzz_campaign(created.campaign_id).await;
         return Err(error);
     }
-    stdout_line(format_args!("Campaign {} created.", created.campaign_id))?;
+    stdout_line(format_args!("Local fuzz campaign started."))?;
     stdout_line(format_args!("Local fuzzer process {} started.", child.id()))
 }
 
-fn campaign_grant_state_path(campaign_id: FuzzCampaignId) -> Result<PathBuf, Error> {
-    let home = std::env::home_dir().ok_or_else(evaluation_error)?;
-    Ok(campaign_grant_state_path_from_home(&home, campaign_id))
-}
-
-fn campaign_grant_state_path_from_home(home: &Path, campaign_id: FuzzCampaignId) -> PathBuf {
-    #[cfg(target_os = "macos")]
-    let state_root = home
-        .join("Library")
-        .join("Application Support")
-        .join("ReproIt");
-    #[cfg(target_os = "windows")]
-    let state_root = home.join("AppData").join("Local").join("ReproIt");
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    let state_root = home.join(".local").join("state").join("reproit");
-
-    state_root
-        .join(CAMPAIGN_GRANT_STATE_DIRECTORY)
-        .join(format!("{campaign_id}.json"))
-}
-
-fn save_campaign_grant_state(grant: &FuzzCampaignGrant) -> Result<(), Error> {
-    grant.validate()?;
-    let path = campaign_grant_state_path(grant.campaign_id)?;
-    write_campaign_grant_state(&path, grant)
-}
-
-fn write_campaign_grant_state(path: &Path, grant: &FuzzCampaignGrant) -> Result<(), Error> {
-    let parent = path.parent().ok_or_else(evaluation_error)?;
-    fs::create_dir_all(parent).map_err(|_| evaluation_error())?;
-    #[cfg(unix)]
-    fs::set_permissions(parent, fs::Permissions::from_mode(0o700))
+fn local_campaign_grant(request: &FuzzCampaignCreate) -> Result<FuzzCampaignGrant, Error> {
+    let now = OffsetDateTime::now_utc() + TimeDuration::hours(24);
+    let seconds = now.unix_timestamp();
+    let milliseconds = now.millisecond();
+    let whole = OffsetDateTime::from_unix_timestamp(seconds).map_err(|_| evaluation_error())?;
+    let whole_text = whole.format(&Rfc3339).map_err(|_| evaluation_error())?;
+    let base = whole_text.strip_suffix('Z').ok_or_else(evaluation_error)?;
+    let expires_at = format!("{base}.{milliseconds:03}Z")
+        .parse()
         .map_err(|_| evaluation_error())?;
-
-    let mut options = OpenOptions::new();
-    options.create_new(true).write(true);
-    #[cfg(unix)]
-    options.mode(0o600);
-    let mut file = options.open(path).map_err(|_| {
-        Error::new(
-            ErrorCode::ConfigConflict,
-            "The campaign grant state already exists or cannot be created.",
-        )
-    })?;
-    let bytes = canonical::canonical_bytes(grant)?;
-    if file
-        .write_all(&bytes)
-        .and_then(|()| file.sync_all())
-        .is_err()
-    {
-        let _ = fs::remove_file(path);
-        return Err(Error::new(
-            ErrorCode::EvaluationError,
-            "Repro It could not save the campaign grant state.",
-        ));
-    }
-    Ok(())
-}
-
-fn remove_campaign_grant_state(campaign_id: FuzzCampaignId) -> Result<(), Error> {
-    let path = campaign_grant_state_path(campaign_id)?;
-    match fs::remove_file(path) {
-        Ok(()) => Ok(()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(_) => Err(Error::new(
-            ErrorCode::EvaluationError,
-            "Repro It could not remove the campaign grant state.",
-        )),
-    }
+    let mut key = [0_u8; 32];
+    getrandom::fill(&mut key).map_err(|_| evaluation_error())?;
+    let campaign_id = FuzzCampaignId::from_str(&format!("fc_{}", Uuid::now_v7()))
+        .map_err(|_| evaluation_error())?;
+    Ok(FuzzCampaignGrant {
+        campaign_id,
+        expires_at,
+        format: FuzzCampaignGrantFormat::V1,
+        grant: reproit_core::crypto::encode_base64url(&key),
+        project_id: request.project_id,
+        service_id: request.service_id,
+    })
 }
 
 fn run_fuzzer_command(operation: &str, path: &Path) -> Result<Vec<u8>, Error> {
@@ -599,18 +520,6 @@ fn fuzzer_program() -> Result<PathBuf, Error> {
     }
 }
 
-fn campaign_cloud_client() -> Result<(HttpCloudClient, String, String), Error> {
-    let session = NativeCredentialStore::open()?.load()?;
-    let origin = match std::env::var("REPROIT_CLOUD_ORIGIN") {
-        Ok(origin) => origin,
-        Err(std::env::VarError::NotPresent) => OFFICIAL_CLOUD_ORIGIN.to_owned(),
-        Err(std::env::VarError::NotUnicode(_)) => return Err(Error::schema_invalid()),
-    };
-    let bearer_token = session.expose_secret().to_owned();
-    let cloud = HttpCloudClient::new(&origin, session)?;
-    Ok((cloud, origin, bearer_token))
-}
-
 fn optional_secret(name: &str) -> Result<Option<String>, Error> {
     match std::env::var(name) {
         Ok(value) if !value.is_empty() && value.len() <= 16_384 => Ok(Some(value)),
@@ -634,7 +543,33 @@ async fn debug_command(agent: &ProductionAgent, repro_id: ReproId) -> Result<(),
     }
 }
 
-async fn check_command(agent: &ProductionAgent, repro_id: Option<ReproId>) -> Result<(), Error> {
+async fn check_command(
+    root: &Path,
+    agent: &ProductionAgent,
+    repro_id: Option<ReproId>,
+) -> Result<(), Error> {
+    if let Some(repro_id) = repro_id
+        && let Some(result) = check_authored_repro(root, repro_id)?
+    {
+        let label = match result.outcome {
+            AuthoredCheckOutcome::Pass => "PASS",
+            AuthoredCheckOutcome::Regression => "REGRESSION",
+            AuthoredCheckOutcome::Unknown => "UNKNOWN",
+        };
+        stdout_line(format_args!("{label} {repro_id}"))?;
+        print_observed_results(&result.observed_results)?;
+        return match result.outcome {
+            AuthoredCheckOutcome::Pass => Ok(()),
+            AuthoredCheckOutcome::Regression => Err(Error::new(
+                ErrorCode::DifferentFailure,
+                "The authored research result is outside its expected range.",
+            )),
+            AuthoredCheckOutcome::Unknown => Err(Error::new(
+                ErrorCode::EvaluationError,
+                "The authored research result is unknown.",
+            )),
+        };
+    }
     let is_set_check = repro_id.is_none();
     let result = agent
         .check_repros_streaming(
@@ -645,6 +580,7 @@ async fn check_command(agent: &ProductionAgent, repro_id: Option<ReproId>) -> Re
                 let label = match check.status {
                     AgentCheckStatus::Pass => "PASS",
                     AgentCheckStatus::Regression => "REGRESSION",
+                    AgentCheckStatus::Unknown => "UNKNOWN",
                     AgentCheckStatus::Error => "ERROR",
                 };
                 stdout_line(format_args!("{label} {}", check.repro_id))
@@ -653,8 +589,8 @@ async fn check_command(agent: &ProductionAgent, repro_id: Option<ReproId>) -> Re
         .await?;
     if is_set_check {
         stdout_line(format_args!(
-            "Totals: {} passed, {} regressed, {} errors.",
-            result.pass_count, result.regression_count, result.error_count
+            "Totals: {} passed, {} regressed, {} unknown, {} errors.",
+            result.pass_count, result.regression_count, result.unknown_count, result.error_count
         ))?;
     }
     if result.error_count > 0 {
@@ -669,6 +605,28 @@ async fn check_command(agent: &ProductionAgent, repro_id: Option<ReproId>) -> Re
             ErrorCode::DifferentFailure,
             "At least one Repro regressed.",
         ));
+    }
+    if result.unknown_count > 0 {
+        return Err(Error::new(
+            ErrorCode::EvaluationError,
+            "At least one Repro has an unknown result.",
+        ));
+    }
+    Ok(())
+}
+
+fn print_observed_results(results: &[AuthoredObservedResult]) -> Result<(), Error> {
+    for observed in results {
+        stdout_line(format_args!(
+            "Observed {}: {} to {} {}. Median: {}. Expected: {} to {}.",
+            observed.criterion_id,
+            observed.observed_minimum,
+            observed.observed_maximum,
+            observed.unit,
+            observed.observed_median,
+            observed.expected_minimum,
+            observed.expected_maximum,
+        ))?;
     }
     Ok(())
 }
@@ -709,11 +667,7 @@ async fn list_command(agent: &ProductionAgent, args: ListArgs) -> Result<(), Err
                 return Ok(());
             }
             for repro in repros {
-                let source = if let Some(campaign_id) = repro.campaign_id {
-                    format!("Fuzz campaign discovered ({campaign_id})")
-                } else {
-                    "Production discovered".to_owned()
-                };
+                let source = discovery_label(repro.discovery_source);
                 stdout_line(format_args!(
                     "{}\t{}\t{}\t{}\t{}\t{}",
                     repro.repro_id,
@@ -739,6 +693,13 @@ async fn list_command(agent: &ProductionAgent, args: ListArgs) -> Result<(), Err
         }
     }
     Ok(())
+}
+
+const fn discovery_label(source: Option<DiscoverySource>) -> &'static str {
+    match source {
+        Some(DiscoverySource::FuzzCampaign) => "Fuzz discovered",
+        _ => "Production discovered",
+    }
 }
 
 async fn triage_command(agent: &ProductionAgent, args: TriageArgs) -> Result<(), Error> {
@@ -1227,6 +1188,8 @@ impl From<&Command> for PublicErrorContext {
             }
             Command::Debug { .. } => Self::Source,
             Command::Gate(_) | Command::Verify { .. } => Self::Release,
+            #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+            Command::Add { .. } => Self::General,
             Command::Mcp | Command::Remove { .. } => Self::General,
         }
     }

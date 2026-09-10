@@ -12,6 +12,7 @@ rust-version = "1.88.0"
 version = "1.0.0"
 
 [workspace.dependencies]
+reproit-sdk-platform = { git = "https://github.com/ReproIt/reproit-sdk", rev = "51ddebda3f0e7a6acddb59b718b881f6b5571a44" }
 base64 = { version = "=0.23.1", default-features = false, features = ["std"] }
 clap = { version = "=4.6.6", features = ["derive"] }
 getrandom = "=0.4.3"
@@ -30,13 +31,14 @@ tempfile = "=3.27.0"
 time = { version = "=0.3.55", default-features = false, features = ["formatting", "parsing", "serde", "std"] }
 tokio = { version = "=1.53.1", default-features = false, features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 toml = "=1.1.4"
+uuid = { version = "=1.24.0", default-features = false, features = ["serde", "std", "v7"] }
 
-reproit-backend = { git = "https://github.com/ReproIt/reproit-core", rev = "e8d4b9be18aad9d94aae530b076339c4c795f8e5" }
-reproit-cloud-api = { git = "https://github.com/ReproIt/reproit-core", rev = "e8d4b9be18aad9d94aae530b076339c4c795f8e5" }
-reproit-core = { git = "https://github.com/ReproIt/reproit-core", rev = "e8d4b9be18aad9d94aae530b076339c4c795f8e5" }
-reproit-worker = { git = "https://github.com/ReproIt/reproit-core", rev = "e8d4b9be18aad9d94aae530b076339c4c795f8e5" }
+reproit-backend = { git = "https://github.com/ReproIt/reproit-core", rev = "8d026203b29881fe216fa3196a242a61cb850eac" }
+reproit-cloud-api = { git = "https://github.com/ReproIt/reproit-core", rev = "8d026203b29881fe216fa3196a242a61cb850eac" }
+reproit-core = { git = "https://github.com/ReproIt/reproit-core", rev = "8d026203b29881fe216fa3196a242a61cb850eac" }
+reproit-worker = { git = "https://github.com/ReproIt/reproit-core", rev = "8d026203b29881fe216fa3196a242a61cb850eac" }
 
-reproit-experiments = { git = "https://github.com/ReproIt/reproit-experiments", rev = "53e5f3b56e105dd6754c9add618a88996654094e" }
+reproit-experiments = { git = "https://github.com/ReproIt/reproit-experiments", rev = "a0f7911c3a02afda5672c9d0fdef12d88afe09e8" }
 reproit-ml = { git = "https://github.com/ReproIt/reproit-ml", rev = "c21c7394a52911eb6dba865967a1e3a709516d8a" }
 
 [workspace.lints.rust]

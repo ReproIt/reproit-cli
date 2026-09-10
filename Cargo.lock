@@ -1465,6 +1465,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "nix"
+version = "0.31.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cf20d2fde8ff38632c426f1165ed7436270b44f199fc55284c38276f9db47c3d"
+dependencies = [
+ "bitflags",
+ "cfg-if",
+ "cfg_aliases",
+ "libc",
+]
+
+[[package]]
 name = "num"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1692,6 +1704,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "process-wrap"
+version = "10.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0e3f4237d0e4741eb50bc5584db701f1299c85fa31ff0274dd6445e79dc42d12"
+dependencies = [
+ "indexmap",
+ "nix",
+ "windows",
+]
+
+[[package]]
 name = "quinn"
 version = "0.11.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1853,7 +1876,7 @@ name = "reproit-app"
 version = "1.0.0"
 dependencies = [
  "reproit-cloud-api",
- "reproit-core 1.0.0 (git+https://github.com/ReproIt/reproit-core?rev=e8d4b9be18aad9d94aae530b076339c4c795f8e5)",
+ "reproit-core 1.0.0 (git+https://github.com/ReproIt/reproit-core?rev=8d026203b29881fe216fa3196a242a61cb850eac)",
  "serde",
  "serde_json",
 ]
@@ -1861,9 +1884,9 @@ dependencies = [
 [[package]]
 name = "reproit-backend"
 version = "1.0.0"
-source = "git+https://github.com/ReproIt/reproit-core?rev=e8d4b9be18aad9d94aae530b076339c4c795f8e5#e8d4b9be18aad9d94aae530b076339c4c795f8e5"
+source = "git+https://github.com/ReproIt/reproit-core?rev=8d026203b29881fe216fa3196a242a61cb850eac#8d026203b29881fe216fa3196a242a61cb850eac"
 dependencies = [
- "reproit-core 1.0.0 (git+https://github.com/ReproIt/reproit-core?rev=e8d4b9be18aad9d94aae530b076339c4c795f8e5)",
+ "reproit-core 1.0.0 (git+https://github.com/ReproIt/reproit-core?rev=8d026203b29881fe216fa3196a242a61cb850eac)",
  "serde",
  "serde_json",
  "sha2 0.11.0",
@@ -1885,9 +1908,10 @@ dependencies = [
  "reproit-app",
  "reproit-backend",
  "reproit-cloud-api",
- "reproit-core 1.0.0 (git+https://github.com/ReproIt/reproit-core?rev=e8d4b9be18aad9d94aae530b076339c4c795f8e5)",
+ "reproit-core 1.0.0 (git+https://github.com/ReproIt/reproit-core?rev=8d026203b29881fe216fa3196a242a61cb850eac)",
  "reproit-experiments",
  "reproit-ml",
+ "reproit-sdk-platform",
  "reproit-worker",
  "reqwest",
  "secrecy",
@@ -1898,14 +1922,15 @@ dependencies = [
  "time",
  "tokio",
  "toml",
+ "uuid",
 ]
 
 [[package]]
 name = "reproit-cloud-api"
 version = "1.0.0"
-source = "git+https://github.com/ReproIt/reproit-core?rev=e8d4b9be18aad9d94aae530b076339c4c795f8e5#e8d4b9be18aad9d94aae530b076339c4c795f8e5"
+source = "git+https://github.com/ReproIt/reproit-core?rev=8d026203b29881fe216fa3196a242a61cb850eac#8d026203b29881fe216fa3196a242a61cb850eac"
 dependencies = [
- "reproit-core 1.0.0 (git+https://github.com/ReproIt/reproit-core?rev=e8d4b9be18aad9d94aae530b076339c4c795f8e5)",
+ "reproit-core 1.0.0 (git+https://github.com/ReproIt/reproit-core?rev=8d026203b29881fe216fa3196a242a61cb850eac)",
  "secrecy",
  "serde",
  "serde_json",
@@ -1937,7 +1962,7 @@ dependencies = [
 [[package]]
 name = "reproit-core"
 version = "1.0.0"
-source = "git+https://github.com/ReproIt/reproit-core?rev=e8d4b9be18aad9d94aae530b076339c4c795f8e5#e8d4b9be18aad9d94aae530b076339c4c795f8e5"
+source = "git+https://github.com/ReproIt/reproit-core?rev=8d026203b29881fe216fa3196a242a61cb850eac#8d026203b29881fe216fa3196a242a61cb850eac"
 dependencies = [
  "aes-gcm",
  "base64 0.23.1",
@@ -1959,9 +1984,10 @@ dependencies = [
 [[package]]
 name = "reproit-experiments"
 version = "0.1.0"
-source = "git+https://github.com/ReproIt/reproit-experiments?rev=53e5f3b56e105dd6754c9add618a88996654094e#53e5f3b56e105dd6754c9add618a88996654094e"
+source = "git+https://github.com/ReproIt/reproit-experiments?rev=a0f7911c3a02afda5672c9d0fdef12d88afe09e8#a0f7911c3a02afda5672c9d0fdef12d88afe09e8"
 dependencies = [
- "reproit-core 1.0.0 (git+https://github.com/ReproIt/reproit-core?rev=e8d4b9be18aad9d94aae530b076339c4c795f8e5)",
+ "reproit-core 1.0.0 (git+https://github.com/ReproIt/reproit-core?rev=8d026203b29881fe216fa3196a242a61cb850eac)",
+ "reproit-sdk-platform",
  "serde",
  "serde_json",
  "sha2 0.11.0",
@@ -1978,12 +2004,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "reproit-sdk-platform"
+version = "1.0.0"
+source = "git+https://github.com/ReproIt/reproit-sdk?rev=51ddebda3f0e7a6acddb59b718b881f6b5571a44#51ddebda3f0e7a6acddb59b718b881f6b5571a44"
+dependencies = [
+ "libc",
+ "process-wrap",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "reproit-worker"
 version = "1.0.0"
-source = "git+https://github.com/ReproIt/reproit-core?rev=e8d4b9be18aad9d94aae530b076339c4c795f8e5#e8d4b9be18aad9d94aae530b076339c4c795f8e5"
+source = "git+https://github.com/ReproIt/reproit-core?rev=8d026203b29881fe216fa3196a242a61cb850eac#8d026203b29881fe216fa3196a242a61cb850eac"
 dependencies = [
  "reproit-cloud-api",
- "reproit-core 1.0.0 (git+https://github.com/ReproIt/reproit-core?rev=e8d4b9be18aad9d94aae530b076339c4c795f8e5)",
+ "reproit-core 1.0.0 (git+https://github.com/ReproIt/reproit-core?rev=8d026203b29881fe216fa3196a242a61cb850eac)",
  "serde",
  "serde_json",
 ]
@@ -2862,6 +2898,7 @@ version = "1.24.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bf3923a6f5c4c6382e0b653c4117f48d631ea17f38ed86e2a828e6f7412f5239"
 dependencies = [
+ "getrandom 0.4.3",
  "js-sys",
  "serde_core",
  "wasm-bindgen",
@@ -3005,6 +3042,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "windows"
+version = "0.62.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "527fadee13e0c05939a6a05d5bd6eec6cd2e3dbd648b9f8e447c6518133d8580"
+dependencies = [
+ "windows-collections",
+ "windows-core",
+ "windows-future",
+ "windows-numerics",
+]
+
+[[package]]
+name = "windows-collections"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "23b2d95af1a8a14a3c7367e1ed4fc9c20e0a26e79551b1454d72583c97cc6610"
+dependencies = [
+ "windows-core",
+]
+
+[[package]]
 name = "windows-core"
 version = "0.62.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3015,6 +3073,17 @@ dependencies = [
  "windows-link",
  "windows-result",
  "windows-strings",
+]
+
+[[package]]
+name = "windows-future"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e1d6f90251fe18a279739e78025bd6ddc52a7e22f921070ccdc67dde84c605cb"
+dependencies = [
+ "windows-core",
+ "windows-link",
+ "windows-threading",
 ]
 
 [[package]]
@@ -3056,6 +3125,16 @@ dependencies = [
  "regex",
  "windows-sys 0.61.2",
  "zeroize",
+]
+
+[[package]]
+name = "windows-numerics"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6e2e40844ac143cdb44aead537bbf727de9b044e107a0f1220392177d15b0f26"
+dependencies = [
+ "windows-core",
+ "windows-link",
 ]
 
 [[package]]
@@ -3119,6 +3198,15 @@ dependencies = [
  "windows_x86_64_gnu",
  "windows_x86_64_gnullvm",
  "windows_x86_64_msvc",
+]
+
+[[package]]
+name = "windows-threading"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3949bd5b99cafdf1c7ca86b43ca564028dfe27d66958f2470940f73d86d75b37"
+dependencies = [
+ "windows-link",
 ]
 
 [[package]]

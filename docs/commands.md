@@ -32,6 +32,55 @@ For an agent or script, use:
 reproit init --non-interactive --service NAME --sdk rust --service-path . -- COMMAND ARGUMENT
 ```
 
+## `reproit add <definition.json>`
+
+Verify and seal one authored research recipe. The definition contains setup
+commands, verified inputs, one measurement command, and an inclusive expected
+range for each reported metric. It also selects one dataset input, one
+criterion, and a bounded claim scope. Run this command only for trusted sources
+and commands. The executor uses argument arrays and does not use a shell.
+
+The installed profile must declare `authored-repro`. The Experiments profile on
+macOS, Linux, and Windows is the only profile that declares this capability.
+Other profiles and platforms remain observed-only.
+
+The command creates an empty temporary workspace. It runs each setup command
+once in order, then verifies every declared input path and digest. It runs the
+measurement command for the declared warmup and measurement schedule only when
+all inputs match. Setup commands can clone a Git commit, download a fixed
+Hugging Face revision, create a package environment, compile code, or perform
+another required preparation step.
+
+A file digest covers its bytes. A directory digest covers a canonical sorted
+list of its regular files, relative paths, byte sizes, and file digests. It does
+not cover timestamps, permissions, or empty directories. Symbolic links are not
+valid inputs. A missing, unreadable, or mismatched input produces `UNKNOWN` and
+prevents all measurement runs.
+
+The result records the observed minimum, median, and maximum for each metric.
+The result passes when every observed median is inside its expected range. The
+evidence records each verified input ID and digest. It also records the
+operating system, architecture, processor, logical processor count, and memory
+size. Memory size is present when the host exposes it through the supported
+native route. Measurements use positive integers. The declared unit must
+identify any scale such as microseconds or millipercent.
+
+The command deletes the temporary workspace after the operation. It does not
+store cloned repositories, downloaded data, model weights, package
+environments, or compiled executables as authored experiment evidence. Called
+tools can maintain their own host caches outside the temporary workspace.
+
+The command seals a claim that links the definition, capsule, result, selected
+dataset, selected criterion, and scope. The definition digest binds the expected
+range. The result digest binds the observed values. The claim does not copy
+those values or the execution evidence.
+
+The command returns the Repro identity, claim digest, and next `check` command.
+It writes no capsule when the observed medians are outside their expected
+ranges. A later `check` creates a new workspace and executes the saved recipe on
+the checking machine. Both `add` and a single-Repro `check` print the observed
+range, median, expected range, and unit for every metric.
+
 ## `reproit list`
 
 Show open Repros by default.
@@ -51,23 +100,13 @@ start a target process.
 
 ## `reproit campaign create <path>`
 
-Validate the campaign, authenticate the project, create the Cloud campaign, save
-the signed grant in private local application state, and start
-`reproit-fuzzer`. The fuzzer runs in the campaign workspace. The command cancels
-the Cloud campaign and removes local grant state if launch fails.
+Validate the campaign, create a local signed grant, and start `reproit-fuzzer`.
+The fuzzer runs in the campaign workspace. Cloud is not contacted to start or
+track the local run.
 
 A production campaign must set `target_environment = "production"` and supply a
 separate `REPROIT_FUZZ_PRODUCTION_CAPABILITY` secret. Keep that secret outside
 tracked configuration and command arguments.
-
-## `reproit campaign status <id>`
-
-Read the authenticated Cloud campaign state. Terminal states remove local grant
-state.
-
-## `reproit campaign cancel <id>`
-
-Cancel the authenticated Cloud campaign and remove its local grant state.
 
 ## `reproit triage <id>`
 
@@ -80,7 +119,8 @@ random local connection address.
 
 ## `reproit check <id>`
 
-Run one Repro against the current source. The result is `PASS`, `REGRESSION`, or `ERROR`.
+Run one Repro against the current source. The result is `PASS`, `REGRESSION`,
+`UNKNOWN`, or `ERROR`.
 
 ## `reproit check`
 
@@ -153,8 +193,9 @@ Remove the tracked reference from the current repository. Keep the Repro and its
 
 ## `reproit mcp`
 
-Serve seven bounded Repro operations to coding agents through standard input and standard output.
-Use the same login, authorization, and application operations as the human commands.
+Serve the bounded Repro operations through standard input and standard output.
+The server adds `add_repro` only when an installed profile declares
+`authored-repro`. It uses the same application operation as `reproit add`.
 
 ## Exit codes
 

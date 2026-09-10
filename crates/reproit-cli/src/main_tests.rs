@@ -1,38 +1,22 @@
 use super::*;
 
-fn fuzz_campaign_grant() -> FuzzCampaignGrant {
-    FuzzCampaignGrant {
-        campaign_id: "fc_01890f3e-7b1c-7cc0-8a1b-123456789abc".parse().unwrap(),
-        expires_at: "2026-08-30T00:00:00.000Z".parse().unwrap(),
-        format: reproit_cloud_api::FuzzCampaignGrantFormat::V1,
-        grant: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA".to_owned(),
-        project_id: "prj_01890f3e-7b1e-7cc0-8a1b-123456789abc".parse().unwrap(),
-        service_id: "svc_01890f3e-7b1f-7cc0-8a1b-123456789abc".parse().unwrap(),
-    }
-}
-
 #[test]
-fn campaign_grant_state_is_private_canonical_and_exclusive() {
-    let directory = tempfile::tempdir().unwrap();
-    let grant = fuzz_campaign_grant();
-    let path = campaign_grant_state_path_from_home(directory.path(), grant.campaign_id);
-
-    write_campaign_grant_state(&path, &grant).unwrap();
+fn repro_list_uses_only_the_discovery_label() {
     assert_eq!(
-        fs::read(&path).unwrap(),
-        canonical::canonical_bytes(&grant).unwrap()
+        discovery_label(Some(DiscoverySource::FuzzCampaign)),
+        "Fuzz discovered"
     );
-    assert!(write_campaign_grant_state(&path, &grant).is_err());
-    #[cfg(unix)]
     assert_eq!(
-        fs::metadata(&path).unwrap().permissions().mode() & 0o777,
-        0o600
+        discovery_label(Some(DiscoverySource::Production)),
+        "Production discovered"
     );
+    assert_eq!(discovery_label(None), "Production discovered");
 }
 
 #[cfg(unix)]
 #[test]
 fn campaign_validator_process_has_a_fixed_deadline() {
+    use std::fs;
     use std::os::unix::fs::PermissionsExt as _;
 
     let directory = tempfile::tempdir().unwrap();
