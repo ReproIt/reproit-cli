@@ -53,3 +53,8 @@ cargo install --locked --path crates/reproit-cli
 
 The source build does not contain official OAuth metadata. It cannot replace a signed production
 release for normal login.
+
+For an authorized test service, set `REPROIT_AUTHORITY` and `REPROIT_CLI_CLIENT_ID` together before
+you run `reproit login`. Get the public OAuth authority and client ID from that service's operator.
+The command uses the normal browser login and stores the session in the native credential store.
+Do not use a client secret as the client ID.

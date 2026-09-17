@@ -77,6 +77,13 @@ pub const fn public_error(
     code: ErrorCode,
 ) -> (&'static str, &'static str) {
     match code {
+        ErrorCode::ConfigConflict if matches!(context, PublicErrorContext::Login) => (
+            "The CLI login configuration is missing or invalid.",
+            concat!(
+                "Use an official release, or set both REPROIT_AUTHORITY and ",
+                "REPROIT_CLI_CLIENT_ID for your test service."
+            ),
+        ),
         ErrorCode::AuthenticationRequired => ("Login is required.", "Run reproit login."),
         ErrorCode::AssigneeNotAuthorized
         | ErrorCode::AuthorizationDenied

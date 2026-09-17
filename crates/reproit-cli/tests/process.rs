@@ -14,6 +14,11 @@ const REPRO_ID: &str = "rpr_01890f3e-7b1c-7cc0-8a1b-123456789ac2";
 const VECTORS: &str = reproit_core::contracts::PROTOCOL_VECTORS;
 const MAX_LINE_BYTES: usize = 8 * 1024;
 const MAX_PROCESS_OUTPUT_BYTES: usize = 1024 * 1024;
+const LOGIN_CONFIGURATION_ERROR: &str = concat!(
+    "The CLI login configuration is missing or invalid.\n",
+    "Use an official release, or set both REPROIT_AUTHORITY and REPROIT_CLI_CLIENT_ID ",
+    "for your test service.\n",
+);
 const FORBIDDEN_DEFAULT_TERMS: [&str; 15] = [
     "admission",
     "attestation",
@@ -338,10 +343,7 @@ fn partial_login_override_uses_public_language_without_internal_details() {
     assert_eq!(output.status.code(), Some(2));
     assert!(output.stdout.is_empty());
     let stderr = String::from_utf8(output.stderr).expect("UTF-8 error");
-    assert_eq!(
-        stderr,
-        "Repro It could not evaluate this Repro.\nRun again with --details.\n"
-    );
+    assert_eq!(stderr, LOGIN_CONFIGURATION_ERROR);
     for forbidden in ["CONFIG_CONFLICT", "authentication configuration", "digest"] {
         assert!(!stderr.contains(forbidden));
     }
@@ -423,6 +425,7 @@ fn source_build_without_official_oauth_metadata_reports_the_typed_blocker() {
     assert_eq!(output.status.code(), Some(2));
     assert!(output.stdout.is_empty());
     let stderr = String::from_utf8(output.stderr).expect("UTF-8 error");
+    assert!(stderr.starts_with(LOGIN_CONFIGURATION_ERROR));
     assert!(stderr.contains("Code: CONFIG_CONFLICT\n"));
     assert!(stderr.contains("Retryable: no\n"));
 }
@@ -440,7 +443,7 @@ fn default_errors_are_canonical_for_each_public_operation() {
         "Check your Git access, then try again.\n"
     );
     let cases = [
-        (vec!["login"], "", generic),
+        (vec!["login"], "", LOGIN_CONFIGURATION_ERROR),
         (
             vec![
                 "init",
