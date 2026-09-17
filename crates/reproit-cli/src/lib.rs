@@ -37,6 +37,9 @@ use reproit_core::{
 };
 
 const MAX_REFERENCE_BYTES: u64 = 65_536;
+pub(crate) const PROJECT_MISSING: &str = "This directory has no .reproit/project.toml file.";
+pub(crate) const PROJECT_INVALID: &str = "The .reproit/project.toml file is invalid.";
+pub(crate) const PROJECT_UNREADABLE: &str = "Repro It could not read .reproit/project.toml.";
 
 pub struct FilesystemRepository {
     root: PathBuf,
@@ -49,13 +52,14 @@ impl FilesystemRepository {
 
     pub fn read_project(&self) -> Result<ProjectConfig, Error> {
         let path = self.config_root().join("project.toml");
-        let metadata = fs::symlink_metadata(&path).map_err(config_read_error)?;
+        let metadata =
+            fs::symlink_metadata(&path).map_err(|error| project_read_error(error.kind()))?;
         if !metadata.file_type().is_file() || metadata.len() > MAX_REFERENCE_BYTES {
-            return Err(config_invalid());
+            return Err(project_invalid());
         }
-        let text = fs::read_to_string(path).map_err(config_read_error)?;
-        let config: ProjectConfig = toml::from_str(&text).map_err(|_| config_invalid())?;
-        config.validate()?;
+        let text = fs::read_to_string(path).map_err(|error| project_read_error(error.kind()))?;
+        let config: ProjectConfig = toml::from_str(&text).map_err(|_| project_invalid())?;
+        config.validate().map_err(|_| project_invalid())?;
         Ok(config)
     }
 
@@ -239,6 +243,18 @@ fn config_invalid() -> Error {
         ErrorCode::SchemaInvalid,
         "The repository configuration is invalid.",
     )
+}
+
+fn project_invalid() -> Error {
+    Error::new(ErrorCode::SchemaInvalid, PROJECT_INVALID)
+}
+
+fn project_read_error(kind: std::io::ErrorKind) -> Error {
+    match kind {
+        std::io::ErrorKind::NotFound => Error::new(ErrorCode::ConfigConflict, PROJECT_MISSING),
+        std::io::ErrorKind::InvalidData => project_invalid(),
+        _ => Error::new(ErrorCode::EvaluationError, PROJECT_UNREADABLE),
+    }
 }
 
 fn config_read_error(_error: std::io::Error) -> Error {

@@ -203,5 +203,12 @@ The server adds `add_repro` only when an installed profile declares
 - `1` means that `check` or `gate` found a `REGRESSION`.
 - `2` means that the command produced `UNKNOWN` or could not produce a valid result.
 
-Use `--details` to show a stable error code and bounded technical facts. The option keeps the same
-result and exit code.
+Use `--details` to show a stable error code and bounded technical facts. For `gate` and `verify`,
+it shows failed case and criterion IDs, baseline and candidate results, and execution problems.
+The output contains at most 20 diagnostic lines, followed by a notice if more details exist.
+Inspect the evidence bundle for the complete result. Diagnostics do not print raw command output.
+The option keeps the same verdict on standard output and the same exit code.
+
+If `.reproit/project.toml` is missing, run `reproit init` from your application repository root.
+If the project file is invalid or unreadable, the error identifies the file and gives a corrective
+action. Detailed errors do not ask you to repeat the same command with `--details`.

@@ -73,6 +73,7 @@ const MAX_CANONICAL_INTEGER: u64 = 9_007_199_254_740_991;
     about = "Reproduce, fix, and keep production bugs."
 )]
 struct Cli {
+    /// Show error codes, failed criteria, and execution problems.
     #[arg(long, global = true)]
     details: bool,
     #[command(subcommand)]
@@ -81,32 +82,33 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Verify and save an authored research experiment.
     #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
-    Add {
-        definition_path: PathBuf,
-    },
+    Add { definition_path: PathBuf },
+    /// Validate or start a local fuzz campaign.
     Campaign(CampaignArgs),
+    /// Sign in through your browser.
     Login,
+    /// Connect this Git repository to a service and SDK.
     Init(InitArgs),
+    /// List open or kept Repros.
     List(ListArgs),
+    /// Change a Repro's priority, assignment, or workflow state.
     Triage(TriageArgs),
-    Debug {
-        repro_id: ReproId,
-    },
-    Check {
-        repro_id: Option<ReproId>,
-    },
+    /// Reproduce a captured failure and connect a debugger.
+    Debug { repro_id: ReproId },
+    /// Test one Repro or all tracked Repros against the current source.
+    Check { repro_id: Option<ReproId> },
+    /// Compare baseline and proposed outputs and save release evidence.
     Gate(GateArgs),
-    Keep {
-        repro_id: ReproId,
-    },
+    /// Check a Repro and keep it as a regression check after it passes.
+    Keep { repro_id: ReproId },
+    /// Serve Repro operations to coding agents over standard input and output.
     Mcp,
-    Remove {
-        repro_id: ReproId,
-    },
-    Verify {
-        bundle_path: PathBuf,
-    },
+    /// Remove a kept reference and retain its Cloud history.
+    Remove { repro_id: ReproId },
+    /// Verify a saved release evidence bundle offline.
+    Verify { bundle_path: PathBuf },
 }
 
 #[derive(Args)]
@@ -117,7 +119,9 @@ struct CampaignArgs {
 
 #[derive(Subcommand)]
 enum CampaignCommand {
+    /// Validate a campaign and start the local fuzzer.
     Create { path: PathBuf },
+    /// Check a campaign file without starting the fuzzer or contacting Cloud.
     Validate { path: PathBuf },
 }
 
@@ -283,19 +287,26 @@ async fn main() -> ExitCode {
 }
 
 fn release_command_exit(
-    result: Result<reproit_experiments::ReleaseDecision, Error>,
+    result: Result<reproit_cli::release_gate::ReleaseReport, Error>,
     details: bool,
     print_unknown_on_error: bool,
 ) -> ExitCode {
     match result {
-        Ok(decision) => {
-            let (label, code) = match decision {
+        Ok(report) => {
+            let (label, code) = match report.decision {
                 reproit_experiments::ReleaseDecision::Pass => ("PASS", 0),
                 reproit_experiments::ReleaseDecision::Regression => ("REGRESSION", 1),
                 reproit_experiments::ReleaseDecision::Unknown => ("UNKNOWN", 2),
             };
             if stdout_line(format_args!("{label}")).is_err() {
                 return ExitCode::from(2);
+            }
+            if details {
+                report.render_details();
+            } else if code != 0 {
+                stderr_line(format_args!(
+                    "Run with --details to see failed criteria and execution problems."
+                ));
             }
             ExitCode::from(code)
         }

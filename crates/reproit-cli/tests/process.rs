@@ -176,7 +176,14 @@ fn public_command_surface_contains_the_platform_contract_commands() {
         commands.push("add");
     }
     for command in commands {
-        assert!(help.contains(&format!("  {command}")), "missing {command}");
+        let line = help
+            .lines()
+            .find(|line| line.starts_with(&format!("  {command} ")))
+            .unwrap_or_else(|| panic!("missing {command}"));
+        assert!(
+            line.split_whitespace().count() > 2,
+            "missing description for {command}"
+        );
     }
     if !cfg!(any(
         target_os = "macos",
@@ -354,6 +361,50 @@ fn details_adds_code_without_changing_the_exit_code() {
     assert!(stderr.contains("Code: CONFIG_CONFLICT\n"));
     assert!(stderr.contains("Retryable: no\n"));
     assert!(!stderr.contains("authentication configuration"));
+    assert!(!stderr.contains("--details"));
+}
+
+#[test]
+fn invalid_project_files_report_setup_errors_without_exposing_contents() {
+    for contents in [
+        b"secret = 'private-token'".as_slice(),
+        b"\xff",
+        &vec![b'x'; 65_537],
+    ] {
+        let temporary = tempfile::tempdir().unwrap();
+        std::fs::create_dir(temporary.path().join(".reproit")).unwrap();
+        std::fs::write(temporary.path().join(".reproit/project.toml"), contents).unwrap();
+        for command in ["list", "check"] {
+            let output = run_at(temporary.path(), &[command], true);
+            assert_eq!(output.status.code(), Some(2));
+            let stderr = String::from_utf8(output.stderr.clone()).unwrap();
+            assert_eq!(
+                stderr,
+                concat!(
+                    "The .reproit/project.toml file is invalid.\n",
+                    "Restore a valid project file, then run the command again.\n",
+                    "Code: SCHEMA_INVALID\nRetryable: no\n",
+                )
+            );
+            assert_bounded(&output);
+        }
+    }
+}
+
+#[test]
+fn unreadable_project_path_reports_a_read_error() {
+    let temporary = tempfile::tempdir().unwrap();
+    std::fs::write(temporary.path().join(".reproit"), b"not a directory").unwrap();
+    let output = run_at(temporary.path(), &["list"], true);
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(
+        String::from_utf8(output.stderr).unwrap(),
+        concat!(
+            "Repro It could not read .reproit/project.toml.\n",
+            "Check that .reproit is a directory and project.toml is readable.\n",
+            "Code: EVALUATION_ERROR\nRetryable: no\n",
+        )
+    );
 }
 
 #[test]
@@ -380,6 +431,10 @@ fn source_build_without_official_oauth_metadata_reports_the_typed_blocker() {
 fn default_errors_are_canonical_for_each_public_operation() {
     let temporary = tempfile::tempdir().expect("temporary repository");
     let generic = "Repro It could not evaluate this Repro.\nRun again with --details.\n";
+    let missing_project = concat!(
+        "This directory has no .reproit/project.toml file.\n",
+        "Run reproit init from your application repository root.\n"
+    );
     let source = concat!(
         "Repro It could not get the required source.\n",
         "Check your Git access, then try again.\n"
@@ -401,16 +456,16 @@ fn default_errors_are_canonical_for_each_public_operation() {
             "",
             source,
         ),
-        (vec!["list"], "", generic),
-        (vec!["triage", REPRO_ID], "", generic),
-        (vec!["debug", REPRO_ID], "", generic),
+        (vec!["list"], "", missing_project),
+        (vec!["triage", REPRO_ID], "", missing_project),
+        (vec!["debug", REPRO_ID], "", missing_project),
         (
             vec!["check", REPRO_ID],
             "ERROR rpr_01890f3e-7b1c-7cc0-8a1b-123456789ac2\n",
-            generic,
+            missing_project,
         ),
-        (vec!["check"], "", generic),
-        (vec!["keep", REPRO_ID], "", generic),
+        (vec!["check"], "", missing_project),
+        (vec!["keep", REPRO_ID], "", missing_project),
         (vec!["remove", REPRO_ID], "", generic),
     ];
     for (arguments, expected_stdout, expected_stderr) in cases {
@@ -451,12 +506,12 @@ fn details_preserve_results_and_exit_codes_for_each_public_operation() {
             "SOURCE_CHECKOUT_FAILED",
             true,
         ),
-        (vec!["list"], "EVALUATION_ERROR", false),
-        (vec!["triage", REPRO_ID], "EVALUATION_ERROR", false),
-        (vec!["debug", REPRO_ID], "EVALUATION_ERROR", false),
-        (vec!["check", REPRO_ID], "EVALUATION_ERROR", false),
-        (vec!["check"], "EVALUATION_ERROR", false),
-        (vec!["keep", REPRO_ID], "EVALUATION_ERROR", false),
+        (vec!["list"], "CONFIG_CONFLICT", false),
+        (vec!["triage", REPRO_ID], "CONFIG_CONFLICT", false),
+        (vec!["debug", REPRO_ID], "CONFIG_CONFLICT", false),
+        (vec!["check", REPRO_ID], "CONFIG_CONFLICT", false),
+        (vec!["check"], "CONFIG_CONFLICT", false),
+        (vec!["keep", REPRO_ID], "CONFIG_CONFLICT", false),
         (vec!["remove", REPRO_ID], "NOT_FOUND", false),
     ];
     for (arguments, code, retryable) in cases {
@@ -464,7 +519,12 @@ fn details_preserve_results_and_exit_codes_for_each_public_operation() {
         let detailed = run_at(temporary.path(), &arguments, true);
         assert_eq!(detailed.status.code(), default.status.code());
         assert_eq!(detailed.stdout, default.stdout);
-        assert!(detailed.stderr.starts_with(&default.stderr));
+        let expected_message = String::from_utf8(default.stderr).unwrap().replace(
+            "Run again with --details.",
+            "Use the error code below when you report this problem.",
+        );
+        assert!(detailed.stderr.starts_with(expected_message.as_bytes()));
+        assert!(!String::from_utf8_lossy(&detailed.stderr).contains("--details"));
         let detail_suffix = format!(
             "Code: {code}\nRetryable: {}\n",
             if retryable { "yes" } else { "no" }

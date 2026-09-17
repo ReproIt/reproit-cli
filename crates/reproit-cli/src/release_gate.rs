@@ -12,15 +12,18 @@ use reproit_core::{Error, ErrorCode, canonical};
 use reproit_experiments::ReleaseDecision;
 use reproit_ml::{
     CommandExecutionOutcome, CommandModelRunner, CommandRunLimits, CommandRunResult, CommandSpec,
-    EvaluationSuite, EvaluationVerdict, ModelIdentity, ModelRun, Observation,
+    CriterionStatus, EvaluationSuite, EvaluationVerdict, ModelIdentity, ModelRun, Observation,
     ObservationUnavailableReason, VerdictStatus, evaluate,
 };
 use serde::{Deserialize, Serialize};
+
+use crate::render::stderr_line;
 
 const MAX_CONFIG_BYTES: u64 = 1_048_576;
 const MAX_INPUT_FILE_BYTES: u64 = 67_108_864;
 const MAX_BUNDLE_BYTES: u64 = 234_881_024;
 const BUNDLE_FORMAT: &str = "reproit.release-evidence-bundle.v1";
+const MAX_DIAGNOSTIC_LINES: usize = 20;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -65,20 +68,95 @@ struct WorkloadConfig {
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct EvidenceBundle {
-    content: BundleContent,
+    content: ReleaseReport,
     content_digest: String,
     format: String,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct BundleContent {
+pub struct ReleaseReport {
     baseline: CommandEvidence,
     bindings: DigestBindings,
     candidate: CommandEvidence,
-    decision: ReleaseDecision,
+    pub decision: ReleaseDecision,
     suite: EvaluationSuite,
     verdict: EvaluationVerdict,
+}
+
+impl ReleaseReport {
+    pub fn render_details(&self) {
+        let unavailable = [("Baseline", &self.baseline), ("Candidate", &self.candidate)]
+            .into_iter()
+            .flat_map(|(role, evidence)| {
+                evidence
+                    .model_run
+                    .observations
+                    .iter()
+                    .filter_map(move |observation| {
+                        if let Observation::Unavailable { case_id, reason } = observation {
+                            Some(format!(
+                                "{role} case {case_id}: {}.",
+                                unavailable_reason(*reason)
+                            ))
+                        } else {
+                            None
+                        }
+                    })
+            });
+        let criteria = self.verdict.cases.iter().flat_map(|case| {
+            case.criteria.iter().filter_map(move |criterion| {
+                if criterion.baseline == CriterionStatus::Satisfied
+                    && criterion.candidate == CriterionStatus::Satisfied
+                {
+                    return None;
+                }
+                Some(format!(
+                    "Case {}, criterion {}: baseline {}, candidate {}.",
+                    case.case_id,
+                    criterion.criterion_id,
+                    criterion_status(criterion.baseline),
+                    criterion_status(criterion.candidate),
+                ))
+            })
+        });
+        for (index, line) in unavailable
+            .chain(criteria)
+            .take(MAX_DIAGNOSTIC_LINES + 1)
+            .enumerate()
+        {
+            if index == MAX_DIAGNOSTIC_LINES {
+                stderr_line(format_args!(
+                    "Additional failure details omitted. Inspect the evidence bundle."
+                ));
+            } else {
+                stderr_line(format_args!("{line}"));
+            }
+        }
+    }
+}
+
+const fn criterion_status(status: CriterionStatus) -> &'static str {
+    match status {
+        CriterionStatus::Satisfied => "satisfied",
+        CriterionStatus::Failed => "failed",
+        CriterionStatus::Unknown => "unknown",
+    }
+}
+
+const fn unavailable_reason(reason: ObservationUnavailableReason) -> &'static str {
+    match reason {
+        ObservationUnavailableReason::ExecutionFailed => "the command failed",
+        ObservationUnavailableReason::ExecutionTimedOut => "the command exceeded its time limit",
+        ObservationUnavailableReason::LogTooLarge => "standard error exceeded its size limit",
+        ObservationUnavailableReason::OutputMissing => {
+            "the command returned no output for this case"
+        }
+        ObservationUnavailableReason::OutputTooLarge => "output exceeded its size or record limit",
+        ObservationUnavailableReason::ProtocolInvalid => {
+            "output does not match the JSON Lines protocol"
+        }
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
@@ -135,7 +213,7 @@ struct OutputRecord {
     output_text: String,
 }
 
-pub fn run(config_path: &Path) -> Result<ReleaseDecision, Error> {
+pub fn run(config_path: &Path) -> Result<ReleaseReport, Error> {
     let config_bytes = read_regular_file(config_path, MAX_CONFIG_BYTES, config_read_error)?;
     let config: GateConfig =
         toml::from_str(std::str::from_utf8(&config_bytes).map_err(|_| config_invalid())?)
@@ -179,10 +257,10 @@ pub fn run(config_path: &Path) -> Result<ReleaseDecision, Error> {
         format: BUNDLE_FORMAT.to_owned(),
     };
     write_bundle(&config_root.join(config.bundle_path), &bundle)?;
-    Ok(decision)
+    Ok(bundle.content)
 }
 
-pub fn verify(bundle_path: &Path) -> Result<ReleaseDecision, Error> {
+pub fn verify(bundle_path: &Path) -> Result<ReleaseReport, Error> {
     let bytes = read_regular_file(bundle_path, MAX_BUNDLE_BYTES, bundle_read_error)?;
     let bundle: EvidenceBundle = serde_json::from_slice(&bytes).map_err(|_| bundle_invalid())?;
     if bundle.format != BUNDLE_FORMAT || bundle.content_digest != canonical_digest(&bundle.content)?
@@ -202,7 +280,7 @@ pub fn verify(bundle_path: &Path) -> Result<ReleaseDecision, Error> {
     if verdict != bundle.content.verdict || decision != bundle.content.decision {
         return Err(bundle_mismatch());
     }
-    Ok(decision)
+    Ok(bundle.content)
 }
 
 fn run_workload(
@@ -249,7 +327,7 @@ fn make_content(
     candidate: CommandEvidence,
     verdict: EvaluationVerdict,
     decision: ReleaseDecision,
-) -> Result<BundleContent, Error> {
+) -> Result<ReleaseReport, Error> {
     let bindings = DigestBindings {
         baseline_model_run: canonical_digest(&baseline.model_run)?,
         baseline_stderr: baseline.stderr_digest.clone(),
@@ -260,7 +338,7 @@ fn make_content(
         suite: canonical_digest(&suite)?,
         verdict: canonical_digest(&verdict)?,
     };
-    Ok(BundleContent {
+    Ok(ReleaseReport {
         baseline,
         bindings,
         candidate,
@@ -270,7 +348,7 @@ fn make_content(
     })
 }
 
-fn verify_bindings(content: &BundleContent) -> Result<(), Error> {
+fn verify_bindings(content: &ReleaseReport) -> Result<(), Error> {
     let expected = DigestBindings {
         baseline_model_run: canonical_digest(&content.baseline.model_run)?,
         baseline_stderr: content.baseline.stderr_digest.clone(),

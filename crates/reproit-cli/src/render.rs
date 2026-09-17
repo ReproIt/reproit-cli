@@ -24,9 +24,17 @@ pub fn stderr_line(arguments: fmt::Arguments<'_>) {
 }
 
 pub fn render_error(context: PublicErrorContext, error: &Error, details: bool) {
-    let (problem, action) = public_error(context, error.code);
+    let (problem, action) = error_message(context, error);
     stderr_line(format_args!("{problem}"));
-    stderr_line(format_args!("{action}"));
+    if details && action == "Run again with --details." {
+        stderr_line(format_args!(
+            "Use the error code below when you report this problem."
+        ));
+    } else if details && action.starts_with("Run with --details") {
+        stderr_line(format_args!("Ask an administrator to review the limit."));
+    } else {
+        stderr_line(format_args!("{action}"));
+    }
     if details {
         stderr_line(format_args!("Code: {}", error.code.as_str()));
         stderr_line(format_args!(
@@ -37,11 +45,30 @@ pub fn render_error(context: PublicErrorContext, error: &Error, details: bool) {
 }
 
 pub fn structured_error(context: PublicErrorContext, error: &Error) -> Error {
-    let (problem, action) = public_error(context, error.code);
+    let (problem, action) = error_message(context, error);
     Error {
         code: error.code,
         message: format!("{problem} {action}"),
         retryable: error.retryable,
+    }
+}
+
+fn error_message(context: PublicErrorContext, error: &Error) -> (&'static str, &'static str) {
+    // Only fixed local messages can select these diagnostics. Never print an internal error.
+    match (error.code, error.message.as_str()) {
+        (ErrorCode::ConfigConflict, crate::PROJECT_MISSING) => (
+            crate::PROJECT_MISSING,
+            "Run reproit init from your application repository root.",
+        ),
+        (ErrorCode::SchemaInvalid, crate::PROJECT_INVALID) => (
+            crate::PROJECT_INVALID,
+            "Restore a valid project file, then run the command again.",
+        ),
+        (ErrorCode::EvaluationError, crate::PROJECT_UNREADABLE) => (
+            crate::PROJECT_UNREADABLE,
+            "Check that .reproit is a directory and project.toml is readable.",
+        ),
+        _ => public_error(context, error.code),
     }
 }
 

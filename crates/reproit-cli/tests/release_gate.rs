@@ -77,7 +77,95 @@ fn gate_blocks_regression_and_unknown_process_results() {
             .expect("run the release gate");
         assert_eq!(output.status.code(), Some(exit_code));
         assert_eq!(String::from_utf8(output.stdout).unwrap(), expected);
-        assert!(output.stderr.is_empty());
+        assert_eq!(
+            output.stderr,
+            b"Run with --details to see failed criteria and execution problems.\n"
+        );
+    }
+}
+
+#[test]
+fn gate_and_verifier_explain_regressions_and_unknown_results() {
+    for (mode, expected, explanation) in [
+        (
+            "regression",
+            1,
+            "Case configured-color, criterion stable-color: baseline satisfied, candidate failed.",
+        ),
+        (
+            "invalid",
+            2,
+            "Candidate case configured-color: output does not match the JSON Lines protocol.",
+        ),
+        (
+            "nonzero",
+            2,
+            "Candidate case configured-color: the command failed.",
+        ),
+    ] {
+        let temporary = tempfile::tempdir().unwrap();
+        write_fixture(temporary.path(), mode);
+        for arguments in [
+            vec!["--details", "gate", "--config", "release.toml"],
+            vec!["--details", "verify", "evidence.json"],
+        ] {
+            let output = reproit()
+                .current_dir(temporary.path())
+                .args(arguments)
+                .output()
+                .unwrap();
+            assert_eq!(output.status.code(), Some(expected));
+            assert_eq!(
+                output.stdout,
+                if expected == 1 {
+                    b"REGRESSION\n".as_slice()
+                } else {
+                    b"UNKNOWN\n"
+                }
+            );
+            let stderr = String::from_utf8(output.stderr).unwrap();
+            assert!(stderr.contains(explanation), "{stderr}");
+            assert!(!stderr.contains("--details"));
+            assert!(!stderr.contains("not-json"));
+        }
+    }
+}
+
+#[test]
+fn detailed_failure_output_is_bounded_at_the_limit_and_beyond() {
+    for count in [20, 21] {
+        let temporary = tempfile::tempdir().unwrap();
+        write_fixture(temporary.path(), "regression");
+        let path = temporary.path().join("suite.json");
+        let mut suite: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        suite["cases"][0]["criteria"] = (0..count)
+            .map(|index| {
+                json!({
+                    "kind": "exact",
+                    "criterion_id": format!("criterion-{index:02}"),
+                    "expected_text": "blue"
+                })
+            })
+            .collect();
+        fs::write(path, serde_json::to_vec(&suite).unwrap()).unwrap();
+        for arguments in [
+            vec!["--details", "gate", "--config", "release.toml"],
+            vec!["--details", "verify", "evidence.json"],
+        ] {
+            let output = reproit()
+                .current_dir(temporary.path())
+                .args(arguments)
+                .output()
+                .unwrap();
+            assert_eq!(output.status.code(), Some(1));
+            let stderr = String::from_utf8(output.stderr).unwrap();
+            assert_eq!(stderr.lines().count(), count);
+            assert_eq!(
+                stderr.contains("Additional failure details omitted."),
+                count == 21
+            );
+            assert!(stderr.len() < 8 * 1024);
+        }
     }
 }
 
