@@ -2,9 +2,11 @@ use std::{
     fs::{self, File, OpenOptions},
     io::{Read, Write},
     path::{Component, Path, PathBuf},
-    process::Command,
     time::Instant,
 };
+
+#[cfg(target_os = "macos")]
+use std::process::Command;
 
 use reproit_core::{Error, ErrorCode, canonical, identity::Digest};
 use reproit_experiments::{
