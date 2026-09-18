@@ -33,12 +33,12 @@ tokio = { version = "=1.53.1", default-features = false, features = ["macros", "
 toml = "=1.1.4"
 uuid = { version = "=1.24.0", default-features = false, features = ["serde", "std", "v7"] }
 
-reproit-backend = { git = "https://github.com/ReproIt/reproit-core", rev = "8d026203b29881fe216fa3196a242a61cb850eac" }
-reproit-cloud-api = { git = "https://github.com/ReproIt/reproit-core", rev = "8d026203b29881fe216fa3196a242a61cb850eac" }
-reproit-core = { git = "https://github.com/ReproIt/reproit-core", rev = "8d026203b29881fe216fa3196a242a61cb850eac" }
-reproit-worker = { git = "https://github.com/ReproIt/reproit-core", rev = "8d026203b29881fe216fa3196a242a61cb850eac" }
+reproit-backend = { git = "https://github.com/ReproIt/reproit-core", rev = "fdc9d6a32ec8e03970f8e863a157ebdc8364a360" }
+reproit-cloud-api = { git = "https://github.com/ReproIt/reproit-core", rev = "fdc9d6a32ec8e03970f8e863a157ebdc8364a360" }
+reproit-core = { git = "https://github.com/ReproIt/reproit-core", rev = "fdc9d6a32ec8e03970f8e863a157ebdc8364a360" }
+reproit-worker = { git = "https://github.com/ReproIt/reproit-core", rev = "fdc9d6a32ec8e03970f8e863a157ebdc8364a360" }
 
-reproit-experiments = { git = "https://github.com/ReproIt/reproit-experiments", rev = "a0f7911c3a02afda5672c9d0fdef12d88afe09e8" }
+reproit-experiments = { git = "https://github.com/ReproIt/reproit-experiments", rev = "d8292fcea645867cdbb044dac18a5c94fb2f7f65" }
 reproit-ml = { git = "https://github.com/ReproIt/reproit-ml", rev = "c21c7394a52911eb6dba865967a1e3a709516d8a" }
 
 [workspace.lints.rust]

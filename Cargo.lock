@@ -1876,7 +1876,7 @@ name = "reproit-app"
 version = "1.0.0"
 dependencies = [
  "reproit-cloud-api",
- "reproit-core 1.0.0 (git+https://github.com/ReproIt/reproit-core?rev=8d026203b29881fe216fa3196a242a61cb850eac)",
+ "reproit-core 1.0.0 (git+https://github.com/ReproIt/reproit-core?rev=fdc9d6a32ec8e03970f8e863a157ebdc8364a360)",
  "serde",
  "serde_json",
 ]
@@ -1884,9 +1884,9 @@ dependencies = [
 [[package]]
 name = "reproit-backend"
 version = "1.0.0"
-source = "git+https://github.com/ReproIt/reproit-core?rev=8d026203b29881fe216fa3196a242a61cb850eac#8d026203b29881fe216fa3196a242a61cb850eac"
+source = "git+https://github.com/ReproIt/reproit-core?rev=fdc9d6a32ec8e03970f8e863a157ebdc8364a360#fdc9d6a32ec8e03970f8e863a157ebdc8364a360"
 dependencies = [
- "reproit-core 1.0.0 (git+https://github.com/ReproIt/reproit-core?rev=8d026203b29881fe216fa3196a242a61cb850eac)",
+ "reproit-core 1.0.0 (git+https://github.com/ReproIt/reproit-core?rev=fdc9d6a32ec8e03970f8e863a157ebdc8364a360)",
  "serde",
  "serde_json",
  "sha2 0.11.0",
@@ -1908,7 +1908,7 @@ dependencies = [
  "reproit-app",
  "reproit-backend",
  "reproit-cloud-api",
- "reproit-core 1.0.0 (git+https://github.com/ReproIt/reproit-core?rev=8d026203b29881fe216fa3196a242a61cb850eac)",
+ "reproit-core 1.0.0 (git+https://github.com/ReproIt/reproit-core?rev=fdc9d6a32ec8e03970f8e863a157ebdc8364a360)",
  "reproit-experiments",
  "reproit-ml",
  "reproit-sdk-platform",
@@ -1928,9 +1928,9 @@ dependencies = [
 [[package]]
 name = "reproit-cloud-api"
 version = "1.0.0"
-source = "git+https://github.com/ReproIt/reproit-core?rev=8d026203b29881fe216fa3196a242a61cb850eac#8d026203b29881fe216fa3196a242a61cb850eac"
+source = "git+https://github.com/ReproIt/reproit-core?rev=fdc9d6a32ec8e03970f8e863a157ebdc8364a360#fdc9d6a32ec8e03970f8e863a157ebdc8364a360"
 dependencies = [
- "reproit-core 1.0.0 (git+https://github.com/ReproIt/reproit-core?rev=8d026203b29881fe216fa3196a242a61cb850eac)",
+ "reproit-core 1.0.0 (git+https://github.com/ReproIt/reproit-core?rev=fdc9d6a32ec8e03970f8e863a157ebdc8364a360)",
  "secrecy",
  "serde",
  "serde_json",
@@ -1962,7 +1962,7 @@ dependencies = [
 [[package]]
 name = "reproit-core"
 version = "1.0.0"
-source = "git+https://github.com/ReproIt/reproit-core?rev=8d026203b29881fe216fa3196a242a61cb850eac#8d026203b29881fe216fa3196a242a61cb850eac"
+source = "git+https://github.com/ReproIt/reproit-core?rev=fdc9d6a32ec8e03970f8e863a157ebdc8364a360#fdc9d6a32ec8e03970f8e863a157ebdc8364a360"
 dependencies = [
  "aes-gcm",
  "base64 0.23.1",
@@ -1984,9 +1984,9 @@ dependencies = [
 [[package]]
 name = "reproit-experiments"
 version = "0.1.0"
-source = "git+https://github.com/ReproIt/reproit-experiments?rev=a0f7911c3a02afda5672c9d0fdef12d88afe09e8#a0f7911c3a02afda5672c9d0fdef12d88afe09e8"
+source = "git+https://github.com/ReproIt/reproit-experiments?rev=d8292fcea645867cdbb044dac18a5c94fb2f7f65#d8292fcea645867cdbb044dac18a5c94fb2f7f65"
 dependencies = [
- "reproit-core 1.0.0 (git+https://github.com/ReproIt/reproit-core?rev=8d026203b29881fe216fa3196a242a61cb850eac)",
+ "reproit-core 1.0.0 (git+https://github.com/ReproIt/reproit-core?rev=fdc9d6a32ec8e03970f8e863a157ebdc8364a360)",
  "reproit-sdk-platform",
  "serde",
  "serde_json",
@@ -2016,10 +2016,10 @@ dependencies = [
 [[package]]
 name = "reproit-worker"
 version = "1.0.0"
-source = "git+https://github.com/ReproIt/reproit-core?rev=8d026203b29881fe216fa3196a242a61cb850eac#8d026203b29881fe216fa3196a242a61cb850eac"
+source = "git+https://github.com/ReproIt/reproit-core?rev=fdc9d6a32ec8e03970f8e863a157ebdc8364a360#fdc9d6a32ec8e03970f8e863a157ebdc8364a360"
 dependencies = [
  "reproit-cloud-api",
- "reproit-core 1.0.0 (git+https://github.com/ReproIt/reproit-core?rev=8d026203b29881fe216fa3196a242a61cb850eac)",
+ "reproit-core 1.0.0 (git+https://github.com/ReproIt/reproit-core?rev=fdc9d6a32ec8e03970f8e863a157ebdc8364a360)",
  "serde",
  "serde_json",
 ]
