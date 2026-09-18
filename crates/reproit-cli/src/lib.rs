@@ -4,6 +4,7 @@ pub mod agent;
 mod authored_execution;
 mod authored_process;
 pub mod authored_repro;
+mod cargo_source;
 pub mod cloud;
 pub mod executor_control;
 pub mod initialization;

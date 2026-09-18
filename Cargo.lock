@@ -766,7 +766,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -1768,7 +1768,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -1876,7 +1876,7 @@ name = "reproit-app"
 version = "1.0.0"
 dependencies = [
  "reproit-cloud-api",
- "reproit-core 1.0.0 (git+https://github.com/ReproIt/reproit-core?rev=fdc9d6a32ec8e03970f8e863a157ebdc8364a360)",
+ "reproit-core 1.0.0 (git+https://github.com/ReproIt/reproit-core?rev=c9cb72f1890fae74ed6650e24824966a4711b47a)",
  "serde",
  "serde_json",
 ]
@@ -1884,9 +1884,9 @@ dependencies = [
 [[package]]
 name = "reproit-backend"
 version = "1.0.0"
-source = "git+https://github.com/ReproIt/reproit-core?rev=fdc9d6a32ec8e03970f8e863a157ebdc8364a360#fdc9d6a32ec8e03970f8e863a157ebdc8364a360"
+source = "git+https://github.com/ReproIt/reproit-core?rev=c9cb72f1890fae74ed6650e24824966a4711b47a#c9cb72f1890fae74ed6650e24824966a4711b47a"
 dependencies = [
- "reproit-core 1.0.0 (git+https://github.com/ReproIt/reproit-core?rev=fdc9d6a32ec8e03970f8e863a157ebdc8364a360)",
+ "reproit-core 1.0.0 (git+https://github.com/ReproIt/reproit-core?rev=c9cb72f1890fae74ed6650e24824966a4711b47a)",
  "serde",
  "serde_json",
  "sha2 0.11.0",
@@ -1908,10 +1908,10 @@ dependencies = [
  "reproit-app",
  "reproit-backend",
  "reproit-cloud-api",
- "reproit-core 1.0.0 (git+https://github.com/ReproIt/reproit-core?rev=fdc9d6a32ec8e03970f8e863a157ebdc8364a360)",
+ "reproit-core 1.0.0 (git+https://github.com/ReproIt/reproit-core?rev=c9cb72f1890fae74ed6650e24824966a4711b47a)",
  "reproit-experiments",
  "reproit-ml",
- "reproit-sdk-platform",
+ "reproit-sdk-platform 1.0.0 (git+https://github.com/ReproIt/reproit-sdk?rev=47261d62f5d7fbcbacda934e2faee5f81d5dfad0)",
  "reproit-worker",
  "reqwest",
  "secrecy",
@@ -1928,9 +1928,9 @@ dependencies = [
 [[package]]
 name = "reproit-cloud-api"
 version = "1.0.0"
-source = "git+https://github.com/ReproIt/reproit-core?rev=fdc9d6a32ec8e03970f8e863a157ebdc8364a360#fdc9d6a32ec8e03970f8e863a157ebdc8364a360"
+source = "git+https://github.com/ReproIt/reproit-core?rev=c9cb72f1890fae74ed6650e24824966a4711b47a#c9cb72f1890fae74ed6650e24824966a4711b47a"
 dependencies = [
- "reproit-core 1.0.0 (git+https://github.com/ReproIt/reproit-core?rev=fdc9d6a32ec8e03970f8e863a157ebdc8364a360)",
+ "reproit-core 1.0.0 (git+https://github.com/ReproIt/reproit-core?rev=c9cb72f1890fae74ed6650e24824966a4711b47a)",
  "secrecy",
  "serde",
  "serde_json",
@@ -1962,7 +1962,7 @@ dependencies = [
 [[package]]
 name = "reproit-core"
 version = "1.0.0"
-source = "git+https://github.com/ReproIt/reproit-core?rev=fdc9d6a32ec8e03970f8e863a157ebdc8364a360#fdc9d6a32ec8e03970f8e863a157ebdc8364a360"
+source = "git+https://github.com/ReproIt/reproit-core?rev=c9cb72f1890fae74ed6650e24824966a4711b47a#c9cb72f1890fae74ed6650e24824966a4711b47a"
 dependencies = [
  "aes-gcm",
  "base64 0.23.1",
@@ -1984,10 +1984,10 @@ dependencies = [
 [[package]]
 name = "reproit-experiments"
 version = "0.1.0"
-source = "git+https://github.com/ReproIt/reproit-experiments?rev=d8292fcea645867cdbb044dac18a5c94fb2f7f65#d8292fcea645867cdbb044dac18a5c94fb2f7f65"
+source = "git+https://github.com/ReproIt/reproit-experiments?rev=932095e7cf964eda7da447e92ea73975a49e1e7c#932095e7cf964eda7da447e92ea73975a49e1e7c"
 dependencies = [
- "reproit-core 1.0.0 (git+https://github.com/ReproIt/reproit-core?rev=fdc9d6a32ec8e03970f8e863a157ebdc8364a360)",
- "reproit-sdk-platform",
+ "reproit-core 1.0.0 (git+https://github.com/ReproIt/reproit-core?rev=c9cb72f1890fae74ed6650e24824966a4711b47a)",
+ "reproit-sdk-platform 1.0.0 (git+https://github.com/ReproIt/reproit-sdk?rev=51ddebda3f0e7a6acddb59b718b881f6b5571a44)",
  "serde",
  "serde_json",
  "sha2 0.11.0",
@@ -2006,6 +2006,16 @@ dependencies = [
 [[package]]
 name = "reproit-sdk-platform"
 version = "1.0.0"
+source = "git+https://github.com/ReproIt/reproit-sdk?rev=47261d62f5d7fbcbacda934e2faee5f81d5dfad0#47261d62f5d7fbcbacda934e2faee5f81d5dfad0"
+dependencies = [
+ "libc",
+ "process-wrap",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "reproit-sdk-platform"
+version = "1.0.0"
 source = "git+https://github.com/ReproIt/reproit-sdk?rev=51ddebda3f0e7a6acddb59b718b881f6b5571a44#51ddebda3f0e7a6acddb59b718b881f6b5571a44"
 dependencies = [
  "libc",
@@ -2016,10 +2026,10 @@ dependencies = [
 [[package]]
 name = "reproit-worker"
 version = "1.0.0"
-source = "git+https://github.com/ReproIt/reproit-core?rev=fdc9d6a32ec8e03970f8e863a157ebdc8364a360#fdc9d6a32ec8e03970f8e863a157ebdc8364a360"
+source = "git+https://github.com/ReproIt/reproit-core?rev=c9cb72f1890fae74ed6650e24824966a4711b47a#c9cb72f1890fae74ed6650e24824966a4711b47a"
 dependencies = [
  "reproit-cloud-api",
- "reproit-core 1.0.0 (git+https://github.com/ReproIt/reproit-core?rev=fdc9d6a32ec8e03970f8e863a157ebdc8364a360)",
+ "reproit-core 1.0.0 (git+https://github.com/ReproIt/reproit-core?rev=c9cb72f1890fae74ed6650e24824966a4711b47a)",
  "serde",
  "serde_json",
 ]
@@ -2105,7 +2115,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -2162,7 +2172,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -2546,7 +2556,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -3038,7 +3048,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]

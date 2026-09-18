@@ -12,7 +12,7 @@ rust-version = "1.88.0"
 version = "1.0.0"
 
 [workspace.dependencies]
-reproit-sdk-platform = { git = "https://github.com/ReproIt/reproit-sdk", rev = "51ddebda3f0e7a6acddb59b718b881f6b5571a44" }
+reproit-sdk-platform = { git = "https://github.com/ReproIt/reproit-sdk", rev = "47261d62f5d7fbcbacda934e2faee5f81d5dfad0" }
 base64 = { version = "=0.23.1", default-features = false, features = ["std"] }
 clap = { version = "=4.6.6", features = ["derive"] }
 getrandom = "=0.4.3"
@@ -33,12 +33,12 @@ tokio = { version = "=1.53.1", default-features = false, features = ["macros", "
 toml = "=1.1.4"
 uuid = { version = "=1.24.0", default-features = false, features = ["serde", "std", "v7"] }
 
-reproit-backend = { git = "https://github.com/ReproIt/reproit-core", rev = "fdc9d6a32ec8e03970f8e863a157ebdc8364a360" }
-reproit-cloud-api = { git = "https://github.com/ReproIt/reproit-core", rev = "fdc9d6a32ec8e03970f8e863a157ebdc8364a360" }
-reproit-core = { git = "https://github.com/ReproIt/reproit-core", rev = "fdc9d6a32ec8e03970f8e863a157ebdc8364a360" }
-reproit-worker = { git = "https://github.com/ReproIt/reproit-core", rev = "fdc9d6a32ec8e03970f8e863a157ebdc8364a360" }
+reproit-backend = { git = "https://github.com/ReproIt/reproit-core", rev = "c9cb72f1890fae74ed6650e24824966a4711b47a" }
+reproit-cloud-api = { git = "https://github.com/ReproIt/reproit-core", rev = "c9cb72f1890fae74ed6650e24824966a4711b47a" }
+reproit-core = { git = "https://github.com/ReproIt/reproit-core", rev = "c9cb72f1890fae74ed6650e24824966a4711b47a" }
+reproit-worker = { git = "https://github.com/ReproIt/reproit-core", rev = "c9cb72f1890fae74ed6650e24824966a4711b47a" }
 
-reproit-experiments = { git = "https://github.com/ReproIt/reproit-experiments", rev = "d8292fcea645867cdbb044dac18a5c94fb2f7f65" }
+reproit-experiments = { git = "https://github.com/ReproIt/reproit-experiments", rev = "932095e7cf964eda7da447e92ea73975a49e1e7c" }
 reproit-ml = { git = "https://github.com/ReproIt/reproit-ml", rev = "c21c7394a52911eb6dba865967a1e3a709516d8a" }
 
 [workspace.lints.rust]

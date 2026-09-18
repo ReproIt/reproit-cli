@@ -122,6 +122,15 @@ random local connection address.
 Run one Repro against the current source. The result is `PASS`, `REGRESSION`,
 `UNKNOWN`, or `ERROR`.
 
+For Rust projects that use `cargo run`, install Cargo and commit `Cargo.lock`.
+The checkout must be clean. The CLI prepares locked dependencies for Linux
+and sends them with the committed source. The worker builds that source
+offline inside the isolated replay environment.
+
+Configure private registry access in your user Cargo configuration. Dependency
+preparation does not load checkout Cargo configuration on the developer host.
+The isolated build can use the committed checkout configuration.
+
 ## `reproit check`
 
 Run all tracked Repros. The command reports each result and final totals.

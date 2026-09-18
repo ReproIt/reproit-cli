@@ -94,10 +94,13 @@ pub const fn public_error(
         ),
         ErrorCode::SourceAccessDenied
         | ErrorCode::SourceCheckoutFailed
-        | ErrorCode::SourceDependencyMissing
         | ErrorCode::SourceRevisionMissing => (
             "Repro It could not get the required source.",
             "Check your Git access, then try again.",
+        ),
+        ErrorCode::SourceDependencyMissing => (
+            "Repro It could not prepare the source dependencies.",
+            "Check the required toolchain, lockfile, and dependency access, then try again.",
         ),
         ErrorCode::UnsupportedCapabilitySet if matches!(context, PublicErrorContext::Init) => (
             "The application did not load complete automatic World capture.",

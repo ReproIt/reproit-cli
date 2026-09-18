@@ -19,8 +19,8 @@ use reproit_worker::WorkerSourceFile;
 const GIT_COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_GIT_ERROR_BYTES: usize = 2_048;
 const MAX_GIT_REVISION_BYTES: usize = 128;
-const MAX_SOURCE_BYTES: usize = 256 * 1_024 * 1_024;
-const MAX_SOURCE_FILES: usize = 16_384;
+pub(crate) const MAX_SOURCE_BYTES: usize = 256 * 1_024 * 1_024;
+pub(crate) const MAX_SOURCE_FILES: usize = 16_384;
 const MAX_SOURCE_PATH_BYTES: usize = 4_096;
 const MAX_TREE_BYTES: usize = MAX_SOURCE_FILES * (MAX_SOURCE_PATH_BYTES + 128);
 const MAX_BATCH_OVERHEAD_BYTES: usize = MAX_SOURCE_FILES * 128;
@@ -30,13 +30,16 @@ pub(crate) fn collect_source(
     expected_revision: &str,
 ) -> Result<Vec<WorkerSourceFile>, Error> {
     validate_root(root)?;
-    require_revision(root, expected_revision)?;
-    require_clean_checkout(root)?;
+    verify_revision(root, expected_revision)?;
     let entries = revision_entries(root, expected_revision)?;
     let files = read_revision_blobs(root, &entries)?;
-    require_revision(root, expected_revision)?;
-    require_clean_checkout(root)?;
+    verify_revision(root, expected_revision)?;
     Ok(files)
+}
+
+pub(crate) fn verify_revision(root: &Path, revision: &str) -> Result<(), Error> {
+    require_revision(root, revision)?;
+    require_clean_checkout(root)
 }
 
 fn validate_root(root: &Path) -> Result<(), Error> {
@@ -431,7 +434,7 @@ fn source_too_large() -> Error {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::process::Command;
 
     use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -525,7 +528,7 @@ mod tests {
         }
     }
 
-    fn initialize_repository(root: &Path) {
+    pub(crate) fn initialize_repository(root: &Path) {
         run_git(root, &["init", "--quiet"]);
         fs::create_dir(root.join("src")).unwrap();
         fs::write(root.join(".gitignore"), b"target/\n").unwrap();
@@ -542,7 +545,7 @@ mod tests {
         run_git(root, &["commit", "-m", "fixture"]);
     }
 
-    fn head(root: &Path) -> String {
+    pub(crate) fn head(root: &Path) -> String {
         let output = Command::new("git")
             .arg("-C")
             .arg(root)
@@ -553,7 +556,7 @@ mod tests {
         String::from_utf8(output.stdout).unwrap().trim().to_owned()
     }
 
-    fn run_git(root: &Path, arguments: &[&str]) {
+    pub(crate) fn run_git(root: &Path, arguments: &[&str]) {
         let status = Command::new("git")
             .arg("-C")
             .arg(root)

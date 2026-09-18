@@ -25,7 +25,7 @@ pub use reproit_worker::{
     ManagedWorkerExecutionRequest, WorkerSource, WorkerSourceFile, WorkerSubject,
 };
 
-use crate::{ManagedSource, source_package::collect_source};
+use crate::{ManagedSource, cargo_source::collect_execution_source};
 
 const KEYRING_SERVICE: &str = "com.reproit.cli";
 const KEYRING_ACCOUNT: &str = "managed-replay-directory";
@@ -201,7 +201,12 @@ impl ManagedExecutionSession {
                 .map_err(|_| replay_host_unavailable())?,
             repro_id,
             source: WorkerSource {
-                files: collect_source(Path::new(&source.workspace), &source.source_revision)?,
+                files: collect_execution_source(
+                    Path::new(&source.workspace),
+                    &source.source_revision,
+                    profile_configuration,
+                    subject,
+                )?,
                 repository_id: source.repository_id.clone(),
                 source_revision: source.source_revision.clone(),
             },
