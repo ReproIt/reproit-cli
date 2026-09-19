@@ -16,6 +16,8 @@ use serde::Deserialize;
 const CALLBACK: &str = "http://127.0.0.1:8765/auth/callback";
 const CALLBACK_ADDRESS: &str = "127.0.0.1:8765";
 const MAX_CALLBACK_LINE_BYTES: usize = 8_192;
+const MAX_CALLBACK_CONNECTIONS: usize = 32;
+const CALLBACK_READ_TIMEOUT: Duration = Duration::from_secs(2);
 const MAX_LOGIN_TIMEOUT: Duration = Duration::from_mins(5);
 const KEYRING_SERVICE: &str = "com.reproit.cli";
 const KEYRING_ACCOUNT: &str = "reproit-session";
@@ -227,29 +229,58 @@ impl LoginAttempt {
         let deadline = Instant::now()
             .checked_add(timeout)
             .ok_or_else(callback_unavailable)?;
-        let (mut stream, peer) = accept_one(&self.listener, deadline)?;
-        if !peer.ip().is_loopback() {
-            return Err(callback_invalid());
+        for _ in 0..MAX_CALLBACK_CONNECTIONS {
+            let (mut stream, peer) = accept_one(&self.listener, deadline)?;
+            if !peer.ip().is_loopback() {
+                return Err(callback_invalid());
+            }
+            let Some(code) = read_callback(&mut stream, self.state.secret(), deadline)? else {
+                continue;
+            };
+            return Ok(AuthorizationResult {
+                code,
+                pkce_verifier: self.pkce_verifier,
+            });
         }
-        stream
-            .set_read_timeout(Some(deadline.saturating_duration_since(Instant::now())))
-            .map_err(|_| callback_unavailable())?;
-        let mut request_line = String::new();
-        BufReader::new(&stream)
-            .take(u64::try_from(MAX_CALLBACK_LINE_BYTES + 1).expect("callback limit fits u64"))
-            .read_line(&mut request_line)
-            .map_err(|_| callback_invalid())?;
-        let code = parse_callback(&request_line, self.state.secret())?;
-        stream
-            .write_all(
-                b"HTTP/1.1 200 OK\r\nContent-Length: 31\r\nConnection: close\r\n\r\nReturn to the Repro It terminal.",
-            )
-            .map_err(|_| callback_unavailable())?;
-        Ok(AuthorizationResult {
-            code,
-            pkce_verifier: self.pkce_verifier,
-        })
+        Err(callback_invalid())
     }
+}
+
+fn read_callback(
+    stream: &mut std::net::TcpStream,
+    state: &str,
+    deadline: Instant,
+) -> Result<Option<String>, Error> {
+    let remaining = deadline.saturating_duration_since(Instant::now());
+    if remaining.is_zero() {
+        return Err(callback_timeout());
+    }
+    stream
+        .set_read_timeout(Some(remaining.min(CALLBACK_READ_TIMEOUT)))
+        .and_then(|()| stream.set_write_timeout(Some(remaining.min(CALLBACK_READ_TIMEOUT))))
+        .map_err(|_| callback_unavailable())?;
+    let mut request_line = String::new();
+    // Browsers can open a connection and close it without sending an HTTP request.
+    if BufReader::new(&*stream)
+        .take(u64::try_from(MAX_CALLBACK_LINE_BYTES + 1).expect("callback limit fits u64"))
+        .read_line(&mut request_line)
+        .is_err()
+        || request_line.is_empty()
+    {
+        return Ok(None);
+    }
+    let Ok(code) = parse_callback(&request_line, state) else {
+        let _ = stream.write_all(
+            b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+        );
+        return Ok(None);
+    };
+    stream
+        .write_all(
+            b"HTTP/1.1 200 OK\r\nContent-Length: 31\r\nConnection: close\r\n\r\nReturn to the Repro It terminal.",
+        )
+        .map_err(|_| callback_unavailable())?;
+    Ok(Some(code))
 }
 
 fn accept_one(
@@ -466,6 +497,76 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn callback_waits_after_closed_and_invalid_connections() {
+        let attempt = callback_attempt();
+        let address = attempt.listener.local_addr().unwrap();
+        let browser = thread::spawn(move || {
+            drop(std::net::TcpStream::connect(address).unwrap());
+            for request in [
+                "GET /favicon.ico HTTP/1.1\r\n",
+                "GET /auth/callback?code=wrong&state=wrong HTTP/1.1\r\n",
+                "GET /auth/callback?code=valid&state=expected HTTP/1.1\r\n",
+            ] {
+                let mut stream = std::net::TcpStream::connect(address).unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+                stream.write_all(request.as_bytes()).unwrap();
+                let mut response = String::new();
+                stream.read_to_string(&mut response).unwrap();
+                let status = if request.contains("code=valid") {
+                    "200 OK"
+                } else {
+                    "400 Bad Request"
+                };
+                assert!(response.starts_with(&format!("HTTP/1.1 {status}\r\n")));
+            }
+        });
+        let result = attempt.wait_for_callback(Duration::from_secs(5)).unwrap();
+        assert_eq!(result.code(), "valid");
+        browser.join().unwrap();
+    }
+
+    #[test]
+    fn callback_connection_budget_and_deadline_are_enforced() {
+        let attempt = callback_attempt();
+        let address = attempt.listener.local_addr().unwrap();
+        let browser = thread::spawn(move || {
+            for _ in 0..MAX_CALLBACK_CONNECTIONS {
+                drop(std::net::TcpStream::connect(address).unwrap());
+            }
+        });
+        assert_eq!(
+            attempt
+                .wait_for_callback(Duration::from_secs(5))
+                .err()
+                .unwrap()
+                .code,
+            ErrorCode::AuthorizationDenied,
+        );
+        browser.join().unwrap();
+        assert_eq!(
+            callback_attempt()
+                .wait_for_callback(Duration::from_millis(20))
+                .err()
+                .unwrap()
+                .code,
+            ErrorCode::AuthenticationRequired,
+        );
+    }
+
+    fn callback_attempt() -> LoginAttempt {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        LoginAttempt {
+            authorization_url: String::new(),
+            listener,
+            pkce_verifier: PkceCodeChallenge::new_random_sha256().1,
+            state: CsrfToken::new("expected".to_owned()),
+        }
     }
 
     #[test]
