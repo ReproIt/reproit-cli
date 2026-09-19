@@ -385,6 +385,26 @@ mod tests {
     use crate::source_package::tests::{head, initialize_repository, run_git};
 
     #[test]
+    fn dependency_inputs_reject_bytes_and_files_above_the_bounds() {
+        let mut files = Vec::new();
+        let mut bytes = MAX_SOURCE_BYTES - 1;
+        append_file(&mut files, &mut bytes, "last".into(), vec![0], false).unwrap();
+        assert_eq!(bytes, MAX_SOURCE_BYTES);
+        assert!(append_file(&mut files, &mut bytes, "overflow".into(), vec![0], false).is_err());
+        let mut files = (0..MAX_SOURCE_FILES - 1)
+            .map(|_| WorkerSourceFile {
+                bytes: String::new(),
+                executable: false,
+                path: "empty".into(),
+            })
+            .collect();
+        let mut bytes = 0;
+        append_file(&mut files, &mut bytes, "last".into(), Vec::new(), false).unwrap();
+        assert_eq!(files.len(), MAX_SOURCE_FILES);
+        assert!(append_file(&mut files, &mut bytes, "overflow".into(), Vec::new(), false).is_err());
+    }
+
+    #[test]
     fn cargo_inputs_preserve_source_and_ignore_checkout_wrappers() {
         let temporary = tempfile::tempdir().unwrap();
         let root = temporary.path().canonicalize().unwrap();
