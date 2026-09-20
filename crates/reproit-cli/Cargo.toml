@@ -1,6 +1,6 @@
 [package]
 name = "reproit-cli"
-description = "Repro It production and research command-line interfaces"
+description = "Repro It production command-line interface"
 edition.workspace = true
 license.workspace = true
 rust-version = "1.94.0"
@@ -10,10 +10,6 @@ publish = false
 [[bin]]
 name = "reproit"
 path = "src/main.rs"
-
-[[bin]]
-name = "reproit-research"
-path = "src/bin/reproit-research.rs"
 
 [dependencies]
 reproit-sdk-platform.workspace = true

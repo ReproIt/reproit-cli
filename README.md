@@ -1,21 +1,15 @@
-# Repro It CLIs
+# Repro It CLI
 
-Repro It provides three focused command-line tools:
-
-- `reproit` reproduces production bugs, tests fixes, and keeps regression checks.
-- `reproit-research` runs verified experiments and evaluations.
-- `reproit-fuzzer` runs bounded campaigns in customer infrastructure.
-
-The tools use the same Core contracts. UI, game-engine, and operating-system
-support remain separate adapters.
+The Repro It CLI reproduces production bugs, tests fixes, and keeps regression
+checks.
 
 ## Install
 
-Install the signed `reproit` and `reproit-research` executables from your Repro
-It release bundle. Install `reproit-fuzzer` only on campaign hosts. Verify each
-checksum before you run an executable.
+Install the signed `reproit` executable from your Repro It release bundle.
+Verify its checksum before you run it.
 
-See [Install Repro It](docs/install.md) for Linux, macOS, Windows, and source-build instructions.
+See [Install Repro It](docs/install.md) for Linux, macOS, Windows, and source
+build instructions.
 
 ## Connect an application
 
@@ -26,183 +20,43 @@ reproit login
 reproit init
 ```
 
-`reproit init` first checks for complete automatic World capture support. For Go,
-it compiles the selected package and verifies the required instrumentation in the
-temporary binary. It does not run the binary. For Node.js and Python, the SDK
-exits from an internal probe before application code runs. For .NET and Rust, the
-SDK verifies its packaged native sentinel and exits during startup. If the exact
-proof is absent, the command stops before it writes `.reproit/project.toml`.
-
-The current probe supports direct .NET, Go, Node.js, Python, and Rust application commands.
-After complete support is installed, `reproit init` connects one service and SDK.
-The application does not create Repro It schemas or IDs.
+`reproit init` checks for complete automatic World capture support. The current
+probe supports direct .NET, Go, Node.js, Python, and Rust application commands.
+After the check passes, the command connects one service and SDK.
 
 ## Fix a captured bug
 
 ```sh
 reproit list
-reproit debug <id>
-reproit check <id>
-reproit keep <id>
+reproit debug REPRO_ID
+reproit check REPRO_ID
+reproit keep REPRO_ID
 reproit check
 ```
 
 | Command | Result |
 | --- | --- |
 | `list` | Show verified Repros that need work. |
-| `debug <id>` | Reproduce the Failure and show the debugger connection. |
-| `check <id>` | Test the current source against one Repro. |
-| `keep <id>` | Add the passing Repro to the repository. |
+| `triage REPRO_ID` | Change the priority, assignment, or workflow state. |
+| `debug REPRO_ID` | Reproduce the Failure and show the debugger connection. |
+| `check REPRO_ID` | Test the current source against one Repro. |
+| `keep REPRO_ID` | Add the passing Repro to the repository. |
 | `check` | Run all tracked Repros. |
+| `remove REPRO_ID` | Remove a tracked reference. |
 | `mcp` | Give a coding agent the same bounded Repro operations. |
 
-`PASS` means that the captured Failure is absent. `REGRESSION` means that it
-still occurs. `UNKNOWN` means that the evidence cannot support a decision.
-`ERROR` means that Repro It could not complete or verify the operation.
+`PASS` means that the captured Failure is absent. `REGRESSION` means that the
+Failure still occurs. `UNKNOWN` means that the evidence cannot support a
+decision. `ERROR` means that Repro It could not complete or verify the
+operation.
 
-`reproit mcp` serves MCP through standard input and standard output. It uses the same login,
-authorization, and application operations as the human commands.
-
-## Add an authored experiment
-
-Use `reproit-research add` on macOS, Linux, or Windows. The installed
-Experiments profile must declare `authored-repro`.
-
-```sh
-reproit-research add experiment.json
-reproit check <id>
-```
-
-`add` validates a strict research recipe and executes it in a new temporary
-workspace. Setup commands can acquire exact source, data, and model revisions.
-After setup, Repro It verifies each declared input digest. It runs the
-measurement command only when every input matches. Every command uses an
-argument array and does not use a shell.
-
-```json
-{
-  "claim": {
-    "criterion_id": "accuracy_millipercent",
-    "dataset_input_id": "dataset",
-    "scope": "The declared model evaluated on the declared dataset."
-  },
-  "criteria": [{
-    "expected": {"maximum": 86000, "minimum": 84000},
-    "id": "accuracy_millipercent",
-    "unit": "millipercent"
-  }],
-  "format": "reproit.research-recipe.v1",
-  "inputs": [{
-    "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    "id": "dataset",
-    "path": "research/data",
-    "role": "dataset"
-  }, {
-    "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-    "id": "model",
-    "path": "research/models/example",
-    "role": "model"
-  }],
-  "profile": "experiments",
-  "run": {
-    "command": {
-      "arguments": ["run", "python", "evaluate.py", "--reproit-jsonl"],
-      "program": "uv",
-      "working_directory": "research"
-    },
-    "measured_runs": 7,
-    "warmup_runs": 1
-  },
-  "setup": [{
-    "arguments": [
-      "clone",
-      "https://example.com/research/model.git",
-      "research"
-    ],
-    "program": "git"
-  }, {
-    "arguments": [
-      "checkout",
-      "--detach",
-      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    ],
-    "program": "git",
-    "working_directory": "research"
-  }, {
-    "arguments": [
-      "download",
-      "example/model",
-      "--revision",
-      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-      "--local-dir",
-      "research/models/example"
-    ],
-    "program": "hf"
-  }]
-}
-```
-
-A setup command can use `git`, `hf`, a package manager, a compiler, or another
-required tool. The run command can use `python`, `uv run`, `cargo run`, or a
-repository-relative program. Use `{exe}` where Windows needs the `.exe` suffix.
-
-An input path is relative to the temporary workspace. A file digest is the
-SHA-256 digest of its bytes. A directory digest is the SHA-256 digest of a
-canonical `reproit.input-directory.v1` record. That record contains the sorted
-relative path, byte size, and file digest of every regular file. Directory
-metadata, timestamps, permissions, and empty directories are not part of the
-digest. Repro It returns `UNKNOWN` when an input is absent, differs from its
-declared digest, contains a symbolic link, or cannot be read.
-
-Each measured run emits one JSON line per criterion. Repro It records the
-observed minimum, median, and maximum. A result passes when each observed
-median is inside its inclusive expected range. This allows one recipe to
-describe realistic results across different hardware without claiming that
-every machine produces one exact value. Measurements use positive integers, so
-the unit must state any scale such as microseconds or millipercent.
-
-The claim selects one dataset input, one criterion, and a bounded scope. Repro
-It seals the claim after it verifies the definition, capsule, evidence, and
-result. The claim links those objects by digest. It does not copy commands,
-measurements, ranges, inputs, or environment evidence. The CLI and MCP add
-results return the claim digest.
-
-Repro It deletes the temporary workspace after the operation. It does not
-store cloned repositories, downloaded data, model weights, package
-environments, or compiled executables as authored evidence. Called tools can
-still maintain their own host caches outside the temporary workspace.
-
-The MCP server advertises `add_repro` only when the same capability is present.
-Both surfaces call the same application operation.
-
-## Run experiments and evaluations
-
-Use `reproit-research gate` to compare baseline and candidate outputs. Use
-`reproit-research verify` to verify saved evidence without Cloud access.
-
-```sh
-reproit-research gate --config release.toml
-reproit-research verify evidence.json
-```
-
-Both commands use the existing content-addressed evidence format.
-
-## Run a distributed fuzz campaign
-
-Use the separate `reproit-fuzzer` CLI on a campaign host:
-
-```sh
-reproit-fuzzer validate campaign.toml
-reproit-fuzzer run campaign.toml < launch.json
-```
-
-The fuzzer sends eligible captures through the normal Repro It capture path.
-Cloud stores the existing Repro and labels it as fuzz discovered.
+`reproit mcp` serves MCP through standard input and standard output. It uses the
+same login, authorization, and application operations as the human commands.
 
 Read the [quick start](docs/quick-start.md) for the full bug-fix loop. Use the
 [command reference](docs/commands.md) for options and exit codes.
 
-## Develop the CLIs
+## Develop the CLI
 
 Run the complete repository check:
 
@@ -210,7 +64,5 @@ Run the complete repository check:
 ./tools/test.sh
 ```
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md) before you change public command behavior.
-
-The research CLI pins Experiments and ML to exact Git revisions. Source builds
-do not require adjacent checkouts of either repository.
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before you change public command
+behavior.

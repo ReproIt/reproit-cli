@@ -2,84 +2,23 @@
 
 ## `reproit login`
 
-Sign in through the browser. The CLI stores the session in the native credential store.
+Sign in through the browser. The CLI stores the session in the native credential
+store.
 
 ## `reproit init`
 
-Check for complete automatic World capture support. For Go, the CLI compiles the
-selected package and verifies the required instrumentation in the temporary
-binary. It does not run the binary. For Node.js and Python, the SDK reports the
-exact shared proof and exits before application code runs. For .NET and Rust, the
-SDK verifies its packaged native sentinel and exits during
-startup. If verification fails, stop before the command writes
-`.reproit/project.toml`.
+Check for complete automatic World capture support. The current probe supports
+.NET, Go, Node.js, Python, and Rust. The command stops before it writes
+`.reproit/project.toml` when the required proof is absent.
 
-The current probe supports .NET, Go, Node.js, Python, and Rust. When support is
-present, connect the current repository to one service and SDK.
-
-Run it again to change the current setup. The command shows the file change before it writes it.
-
-For Go, provide a direct `go run` command. Initialization adds the internal build
-instrumentation flags to the stored run configuration. It does not add a public
-language-specific command.
-
-For .NET and Rust, provide a direct `dotnet run` or `cargo run` command. The CLI
-stores the command without a language-specific wrapper.
+Run the command again to change the current setup. The command shows the file
+change before it writes the file.
 
 For an agent or script, use:
 
 ```sh
 reproit init --non-interactive --service NAME --sdk rust --service-path . -- COMMAND ARGUMENT
 ```
-
-## `reproit-research add <definition.json>`
-
-Verify and seal one authored research recipe. The definition contains setup
-commands, verified inputs, one measurement command, and an inclusive expected
-range for each reported metric. It also selects one dataset input, one
-criterion, and a bounded claim scope. Run this command only for trusted sources
-and commands. The executor uses argument arrays and does not use a shell.
-
-The installed profile must declare `authored-repro`. The Experiments profile on
-macOS, Linux, and Windows is the only profile that declares this capability.
-Other profiles and platforms remain observed-only.
-
-The command creates an empty temporary workspace. It runs each setup command
-once in order, then verifies every declared input path and digest. It runs the
-measurement command for the declared warmup and measurement schedule only when
-all inputs match. Setup commands can clone a Git commit, download a fixed
-Hugging Face revision, create a package environment, compile code, or perform
-another required preparation step.
-
-A file digest covers its bytes. A directory digest covers a canonical sorted
-list of its regular files, relative paths, byte sizes, and file digests. It does
-not cover timestamps, permissions, or empty directories. Symbolic links are not
-valid inputs. A missing, unreadable, or mismatched input produces `UNKNOWN` and
-prevents all measurement runs.
-
-The result records the observed minimum, median, and maximum for each metric.
-The result passes when every observed median is inside its expected range. The
-evidence records each verified input ID and digest. It also records the
-operating system, architecture, processor, logical processor count, and memory
-size. Memory size is present when the host exposes it through the supported
-native route. Measurements use positive integers. The declared unit must
-identify any scale such as microseconds or millipercent.
-
-The command deletes the temporary workspace after the operation. It does not
-store cloned repositories, downloaded data, model weights, package
-environments, or compiled executables as authored experiment evidence. Called
-tools can maintain their own host caches outside the temporary workspace.
-
-The command seals a claim that links the definition, capsule, result, selected
-dataset, selected criterion, and scope. The definition digest binds the expected
-range. The result digest binds the observed values. The claim does not copy
-those values or the execution evidence.
-
-The command returns the Repro identity, claim digest, and next `check` command.
-It writes no capsule when the observed medians are outside their expected
-ranges. A later `check` creates a new workspace and executes the saved recipe on
-the checking machine. Both `add` and a single-Repro `check` print the observed
-range, median, expected range, and unit for every metric.
 
 ## `reproit list`
 
@@ -93,38 +32,25 @@ reproit list --priority p0
 reproit list --assignee USER
 ```
 
-## `reproit-fuzzer validate <path>`
+## `reproit triage REPRO_ID`
 
-Parse and validate one TOML campaign file. The command does not contact Cloud or
-start a target process.
+Change the priority, assignment, or workflow state. Resolving a Repro requires a
+passing check.
 
-## `reproit-fuzzer run <path>`
+## `reproit debug REPRO_ID`
 
-Read a local launch document from standard input and start the campaign. The
-fuzzer runs in the campaign workspace.
+Reproduce the captured Failure in an isolated replay. The command shows the
+debugger client and a random local connection address.
 
-A production campaign must set `target_environment = "production"`. Its private
-launch document must contain separate production authorization. Keep the launch
-document outside tracked configuration and command arguments.
-
-## `reproit triage <id>`
-
-Change the priority, assignment, or workflow state. Resolving a Repro requires a passing check.
-
-## `reproit debug <id>`
-
-Reproduce the captured Failure in an isolated replay. The command shows the debugger client and a
-random local connection address.
-
-## `reproit check <id>`
+## `reproit check REPRO_ID`
 
 Run one Repro against the current source. The result is `PASS`, `REGRESSION`,
 `UNKNOWN`, or `ERROR`.
 
 For Rust projects that use `cargo run`, install Cargo and commit `Cargo.lock`.
-The checkout must be clean. The CLI prepares locked dependencies for Linux
-and sends them with the committed source. The worker builds that source
-offline inside the isolated replay environment.
+The checkout must be clean. The CLI prepares locked dependencies for Linux and
+sends them with the committed source. The worker builds that source offline in
+the isolated replay environment.
 
 Configure private registry access in your user Cargo configuration. Dependency
 preparation does not load checkout Cargo configuration on the developer host.
@@ -134,91 +60,29 @@ The isolated build can use the committed checkout configuration.
 
 Run all tracked Repros. The command reports each result and final totals.
 
-## `reproit-research gate --config <path>`
+## `reproit keep REPRO_ID`
 
-Run a baseline command and a candidate command. The commands receive suite cases as JSON Lines on
-standard input. Each command must return one JSON Lines output record for each completed case.
+Check the current source. After `PASS`, write a tracked reference under
+`.reproit/repros/`.
 
-The configuration uses explicit executables and argument arrays. It does not run a shell command
-string. All input and output paths are relative to the configuration file.
+## `reproit remove REPRO_ID`
 
-```toml
-format = "reproit.release-gate-config.v1"
-suite_path = "suite.json"
-bundle_path = "evidence.json"
-
-[limits]
-max_execution_seconds = 300
-max_records = 1024
-max_stderr_bytes = 1048576
-max_stdin_bytes = 41943040
-max_stdout_bytes = 16777216
-
-[baseline]
-executable = "./run-model"
-arguments = ["baseline"]
-model_path = "baseline-model.json"
-
-[candidate]
-executable = "./run-model"
-arguments = ["candidate"]
-model_path = "candidate-model.json"
-```
-
-The suite uses `reproit.ml-evaluation-suite.v1`. Each model file uses
-`reproit.ml-model-identity.v1`.
-
-Each input record has this form:
-
-```json
-{"case_id":"configured-color","input_text":"State the configured color."}
-```
-
-Each completed output record has this form:
-
-```json
-{"case_id":"configured-color","output_text":"blue"}
-```
-
-The command writes one content-addressed JSON evidence bundle. The bundle contains the suite,
-both ModelRuns, bounded raw outputs, the verdict, the release decision, and digest bindings.
-
-This local bundle is not an independently signed Release Claim. Cloud confirmation must add the
-second runner and its authenticated evidence before Repro It creates that Claim.
-
-## `reproit-research verify <bundle-path>`
-
-Verify a release evidence bundle without Cloud access. The command checks the raw evidence,
-ModelRuns, suite, verdict, release decision, and all digest bindings.
-
-## `reproit keep <id>`
-
-Check the current source. After `PASS`, write a tracked reference under `.reproit/repros/`.
-
-## `reproit remove <id>`
-
-Remove the tracked reference from the current repository. Keep the Repro and its Cloud history.
+Remove the tracked reference from the current repository. Keep the Repro and
+its Cloud history.
 
 ## `reproit mcp`
 
 Serve the bounded Repro operations through standard input and standard output.
-The server adds `add_repro` only when an installed profile declares
-`authored-repro`. It uses the same application operation as
-`reproit-research add`.
+The server exposes only operations allowed by the installed profile.
 
 ## Exit codes
 
-- `0` means that the command succeeded. For `check` and `gate`, the result is `PASS`.
-- `1` means that `check` or `gate` found a `REGRESSION`.
-- `2` means that the command produced `UNKNOWN` or could not produce a valid result.
+- `0` means that the command succeeded. For `check`, the result is `PASS`.
+- `1` means that `check` found a `REGRESSION`.
+- `2` means that the command produced `UNKNOWN` or no valid result.
 
-Use `--details` to show a stable error code and bounded technical facts. For
-`reproit-research gate` and `reproit-research verify`,
-it shows failed case and criterion IDs, baseline and candidate results, and execution problems.
-The output contains at most 20 diagnostic lines, followed by a notice if more details exist.
-Inspect the evidence bundle for the complete result. Diagnostics do not print raw command output.
-The option keeps the same verdict on standard output and the same exit code.
+Use `--details` to show a stable error code and bounded technical facts. The
+output contains bounded diagnostic lines and does not print raw command output.
 
-If `.reproit/project.toml` is missing, run `reproit init` from your application repository root.
-If the project file is invalid or unreadable, the error identifies the file and gives a corrective
-action. Detailed errors do not ask you to repeat the same command with `--details`.
+If `.reproit/project.toml` is missing, run `reproit init` from the application
+repository root. If the file is invalid, restore a valid project file.

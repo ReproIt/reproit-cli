@@ -325,34 +325,15 @@ fn changed_claim_bytes_return_an_error() {
 }
 
 #[test]
-fn cli_and_mcp_add_the_same_repro_and_cli_checks_it() {
+fn application_and_mcp_add_the_same_repro_and_cli_checks_it() {
     let _guard = authored_test_guard();
     let cli_workspace = Workspace::new("candidate");
-    let cli_add = reproit_research(cli_workspace.root.path())
-        .args(["add", "experiment.json"])
-        .output()
-        .unwrap();
-    assert!(cli_add.status.success());
-    assert!(cli_add.stderr.is_empty());
-    let cli_stdout = String::from_utf8(cli_add.stdout).unwrap();
-    assert!(
-        cli_stdout
-            .contains("Observed latency: 80 to 80 microseconds. Median: 80. Expected: 70 to 90.")
-    );
-    let cli_repro_id = cli_stdout
-        .lines()
-        .next()
-        .and_then(|line| line.strip_prefix("Added "))
-        .and_then(|value| value.strip_suffix('.'))
-        .unwrap();
-    let cli_claim_digest = cli_stdout
-        .lines()
-        .find_map(|line| line.strip_prefix("Claim "))
-        .and_then(|value| value.strip_suffix('.'))
-        .unwrap();
+    let application_result = add_repro(cli_workspace.root.path(), &input()).unwrap();
+    let cli_repro_id = application_result.repro_id.to_string();
+    let cli_claim_digest = application_result.claim_digest.to_string();
 
     let check = reproit(cli_workspace.root.path())
-        .args(["check", cli_repro_id])
+        .args(["check", cli_repro_id.as_str()])
         .output()
         .unwrap();
     assert!(check.status.success());
@@ -369,7 +350,7 @@ fn cli_and_mcp_add_the_same_repro_and_cli_checks_it() {
             .root
             .path()
             .join(".reproit/authored-repros")
-            .join(cli_repro_id),
+            .join(&cli_repro_id),
     )
     .unwrap();
     let mut child = reproit(cli_workspace.root.path())
@@ -719,12 +700,6 @@ fn git_output(root: &Path, arguments: &[&str]) -> String {
 
 fn reproit(root: &Path) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_reproit"));
-    command.current_dir(root);
-    command
-}
-
-fn reproit_research(root: &Path) -> Command {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_reproit-research"));
     command.current_dir(root);
     command
 }
