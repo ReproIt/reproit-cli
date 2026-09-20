@@ -32,7 +32,7 @@ For an agent or script, use:
 reproit init --non-interactive --service NAME --sdk rust --service-path . -- COMMAND ARGUMENT
 ```
 
-## `reproit add <definition.json>`
+## `reproit-research add <definition.json>`
 
 Verify and seal one authored research recipe. The definition contains setup
 commands, verified inputs, one measurement command, and an inclusive expected
@@ -93,20 +93,19 @@ reproit list --priority p0
 reproit list --assignee USER
 ```
 
-## `reproit campaign validate <path>`
+## `reproit-fuzzer validate <path>`
 
 Parse and validate one TOML campaign file. The command does not contact Cloud or
 start a target process.
 
-## `reproit campaign create <path>`
+## `reproit-fuzzer run <path>`
 
-Validate the campaign, create a local signed grant, and start `reproit-fuzzer`.
-The fuzzer runs in the campaign workspace. Cloud is not contacted to start or
-track the local run.
+Read a local launch document from standard input and start the campaign. The
+fuzzer runs in the campaign workspace.
 
-A production campaign must set `target_environment = "production"` and supply a
-separate `REPROIT_FUZZ_PRODUCTION_CAPABILITY` secret. Keep that secret outside
-tracked configuration and command arguments.
+A production campaign must set `target_environment = "production"`. Its private
+launch document must contain separate production authorization. Keep the launch
+document outside tracked configuration and command arguments.
 
 ## `reproit triage <id>`
 
@@ -135,7 +134,7 @@ The isolated build can use the committed checkout configuration.
 
 Run all tracked Repros. The command reports each result and final totals.
 
-## `reproit gate --config <path>`
+## `reproit-research gate --config <path>`
 
 Run a baseline command and a candidate command. The commands receive suite cases as JSON Lines on
 standard input. Each command must return one JSON Lines output record for each completed case.
@@ -187,7 +186,7 @@ both ModelRuns, bounded raw outputs, the verdict, the release decision, and dige
 This local bundle is not an independently signed Release Claim. Cloud confirmation must add the
 second runner and its authenticated evidence before Repro It creates that Claim.
 
-## `reproit verify <bundle-path>`
+## `reproit-research verify <bundle-path>`
 
 Verify a release evidence bundle without Cloud access. The command checks the raw evidence,
 ModelRuns, suite, verdict, release decision, and all digest bindings.
@@ -204,7 +203,8 @@ Remove the tracked reference from the current repository. Keep the Repro and its
 
 Serve the bounded Repro operations through standard input and standard output.
 The server adds `add_repro` only when an installed profile declares
-`authored-repro`. It uses the same application operation as `reproit add`.
+`authored-repro`. It uses the same application operation as
+`reproit-research add`.
 
 ## Exit codes
 
@@ -212,7 +212,8 @@ The server adds `add_repro` only when an installed profile declares
 - `1` means that `check` or `gate` found a `REGRESSION`.
 - `2` means that the command produced `UNKNOWN` or could not produce a valid result.
 
-Use `--details` to show a stable error code and bounded technical facts. For `gate` and `verify`,
+Use `--details` to show a stable error code and bounded technical facts. For
+`reproit-research gate` and `reproit-research verify`,
 it shows failed case and criterion IDs, baseline and candidate results, and execution problems.
 The output contains at most 20 diagnostic lines, followed by a notice if more details exist.
 Inspect the evidence bundle for the complete result. Diagnostics do not print raw command output.

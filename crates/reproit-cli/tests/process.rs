@@ -41,6 +41,10 @@ fn reproit() -> Command {
     Command::new(env!("CARGO_BIN_EXE_reproit"))
 }
 
+fn reproit_research() -> Command {
+    Command::new(env!("CARGO_BIN_EXE_reproit-research"))
+}
+
 fn run_at(root: &Path, arguments: &[&str], details: bool) -> std::process::Output {
     let mut command = reproit();
     command.current_dir(root).stdin(Stdio::null());
@@ -109,6 +113,75 @@ fn help_is_a_process_level_pass() {
 }
 
 #[test]
+fn research_help_is_a_process_level_pass() {
+    let output = reproit_research()
+        .arg("--help")
+        .output()
+        .expect("run research CLI help");
+    assert_eq!(output.status.code(), Some(0));
+    let stdout = String::from_utf8(output.stdout).expect("UTF-8 help");
+    assert!(stdout.contains("Run verified experiments and evaluations."));
+    let mut commands = vec!["gate", "verify"];
+    if cfg!(any(
+        target_os = "macos",
+        target_os = "linux",
+        target_os = "windows"
+    )) {
+        commands.push("add");
+    }
+    for command in commands {
+        assert!(
+            stdout
+                .lines()
+                .any(|line| line.starts_with(&format!("  {command} ")))
+        );
+    }
+    for command in ["login", "init", "debug", "check", "mcp", "campaign"] {
+        assert!(
+            !stdout
+                .lines()
+                .any(|line| line.starts_with(&format!("  {command} ")))
+        );
+    }
+    assert!(output.stderr.is_empty());
+
+    let mut help_arguments = vec![&["gate", "--help"][..], &["verify", "--help"]];
+    if cfg!(any(
+        target_os = "macos",
+        target_os = "linux",
+        target_os = "windows"
+    )) {
+        help_arguments.push(&["add", "--help"]);
+    }
+    for arguments in help_arguments {
+        let output = reproit_research()
+            .args(arguments)
+            .output()
+            .expect("run research command help");
+        assert_eq!(output.status.code(), Some(0), "arguments: {arguments:?}");
+        assert!(output.stderr.is_empty(), "arguments: {arguments:?}");
+        assert_bounded(&output);
+    }
+}
+
+#[test]
+fn research_invalid_command_is_a_bounded_command_error() {
+    let output = reproit_research()
+        .arg("debug")
+        .output()
+        .expect("reject production command");
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(output.stderr).expect("UTF-8 error"),
+        concat!(
+            "error: unrecognized command 'debug'\n",
+            "Run 'reproit-research --help' for usage.\n"
+        )
+    );
+}
+
+#[test]
 fn mcp_stdio_lists_the_bounded_tools() {
     let mut child = reproit()
         .arg("mcp")
@@ -169,18 +242,9 @@ fn public_command_surface_contains_the_platform_contract_commands() {
     assert_eq!(output.status.code(), Some(0));
     assert!(output.stderr.is_empty());
     let help = String::from_utf8(output.stdout).expect("UTF-8 help");
-    let mut commands = vec![
-        "campaign", "login", "init", "list", "triage", "debug", "check", "gate", "keep", "mcp",
-        "remove", "verify",
-    ];
-    if cfg!(any(
-        target_os = "macos",
-        target_os = "linux",
-        target_os = "windows"
-    )) {
-        commands.push("add");
-    }
-    for command in commands {
+    for command in [
+        "login", "init", "list", "triage", "debug", "check", "keep", "mcp", "remove",
+    ] {
         let line = help
             .lines()
             .find(|line| line.starts_with(&format!("  {command} ")))
@@ -190,37 +254,27 @@ fn public_command_surface_contains_the_platform_contract_commands() {
             "missing description for {command}"
         );
     }
-    if !cfg!(any(
-        target_os = "macos",
-        target_os = "linux",
-        target_os = "windows"
-    )) {
-        assert!(!help.contains("  add"));
+    for command in ["add", "gate", "verify", "campaign"] {
+        assert!(
+            !help
+                .lines()
+                .any(|line| line.starts_with(&format!("  {command} ")))
+        );
     }
     assert!(!help.contains("  link"));
     assert!(!help.contains("  help"));
 
-    let mut help_arguments = vec![
-        &["campaign", "--help"][..],
+    let help_arguments = [
         &["login", "--help"][..],
         &["init", "--help"],
         &["list", "--help"],
         &["triage", "--help"],
         &["debug", "--help"],
         &["check", "--help"],
-        &["gate", "--help"],
         &["keep", "--help"],
         &["mcp", "--help"],
         &["remove", "--help"],
-        &["verify", "--help"],
     ];
-    if cfg!(any(
-        target_os = "macos",
-        target_os = "linux",
-        target_os = "windows"
-    )) {
-        help_arguments.push(&["add", "--help"]);
-    }
     for arguments in help_arguments {
         let output = reproit()
             .args(arguments)
@@ -250,6 +304,10 @@ fn noncontract_commands_use_the_bounded_command_error() {
             "link",
         ),
         (&["help"][..], "help"),
+        (&["add"][..], "add"),
+        (&["gate"][..], "gate"),
+        (&["verify"][..], "verify"),
+        (&["campaign"][..], "campaign"),
     ] {
         let output = reproit()
             .args(arguments)

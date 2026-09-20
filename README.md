@@ -1,11 +1,19 @@
-# Repro It CLI
+# Repro It CLIs
 
-The Repro It CLI reproduces a production bug, tests a fix, and keeps a regression check.
+Repro It provides three focused command-line tools:
+
+- `reproit` reproduces production bugs, tests fixes, and keeps regression checks.
+- `reproit-research` runs verified experiments and evaluations.
+- `reproit-fuzzer` runs bounded campaigns in customer infrastructure.
+
+The tools use the same Core contracts. UI, game-engine, and operating-system
+support remain separate adapters.
 
 ## Install
 
-Install the signed `reproit` executable from your Repro It release bundle. Verify its checksum
-before you run it.
+Install the signed `reproit` and `reproit-research` executables from your Repro
+It release bundle. Install `reproit-fuzzer` only on campaign hosts. Verify each
+checksum before you run an executable.
 
 See [Install Repro It](docs/install.md) for Linux, macOS, Windows, and source-build instructions.
 
@@ -47,8 +55,6 @@ reproit check
 | `keep <id>` | Add the passing Repro to the repository. |
 | `check` | Run all tracked Repros. |
 | `mcp` | Give a coding agent the same bounded Repro operations. |
-| `gate --config <path>` | Run a baseline and candidate, then make a release decision. |
-| `verify <bundle-path>` | Verify a content-addressed release evidence bundle offline. |
 
 `PASS` means that the captured Failure is absent. `REGRESSION` means that it
 still occurs. `UNKNOWN` means that the evidence cannot support a decision.
@@ -59,11 +65,11 @@ authorization, and application operations as the human commands.
 
 ## Add an authored experiment
 
-Use `add` on macOS, Linux, or Windows when the installed Experiments profile
-declares `authored-repro`:
+Use `reproit-research add` on macOS, Linux, or Windows. The installed
+Experiments profile must declare `authored-repro`.
 
 ```sh
-reproit add experiment.json
+reproit-research add experiment.json
 reproit check <id>
 ```
 
@@ -169,28 +175,34 @@ still maintain their own host caches outside the temporary workspace.
 The MCP server advertises `add_repro` only when the same capability is present.
 Both surfaces call the same application operation.
 
-## Run a distributed fuzz campaign
+## Run experiments and evaluations
 
-Validate a campaign without Cloud or target access:
+Use `reproit-research gate` to compare baseline and candidate outputs. Use
+`reproit-research verify` to verify saved evidence without Cloud access.
 
 ```sh
-reproit campaign validate campaign.toml
+reproit-research gate --config release.toml
+reproit-research verify evidence.json
 ```
 
-Create a local campaign and start the customer-side fuzzer:
+Both commands use the existing content-addressed evidence format.
+
+## Run a distributed fuzz campaign
+
+Use the separate `reproit-fuzzer` CLI on a campaign host:
 
 ```sh
-reproit campaign create campaign.toml
+reproit-fuzzer validate campaign.toml
+reproit-fuzzer run campaign.toml < launch.json
 ```
 
 The fuzzer sends eligible captures through the normal Repro It capture path.
-Cloud stores the existing Repro and labels it as fuzz discovered. The CLI does
-not create or track a Cloud campaign session.
+Cloud stores the existing Repro and labels it as fuzz discovered.
 
 Read the [quick start](docs/quick-start.md) for the full bug-fix loop. Use the
 [command reference](docs/commands.md) for options and exit codes.
 
-## Develop the CLI
+## Develop the CLIs
 
 Run the complete repository check:
 
@@ -200,5 +212,5 @@ Run the complete repository check:
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) before you change public command behavior.
 
-The release-gate integration pins Experiments and ML to exact Git revisions.
-Source builds do not require adjacent checkouts of either repository.
+The research CLI pins Experiments and ML to exact Git revisions. Source builds
+do not require adjacent checkouts of either repository.

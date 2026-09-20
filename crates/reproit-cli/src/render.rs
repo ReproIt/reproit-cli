@@ -1,6 +1,10 @@
-use std::fmt;
+use std::{fmt, process::ExitCode};
+
+use clap::error::{ContextKind, ContextValue, ErrorKind};
 
 use reproit_core::{Error, ErrorCode};
+
+use crate::authored_repro::AuthoredObservedResult;
 
 const MAX_LINE_BYTES: usize = 8 * 1024;
 
@@ -21,6 +25,53 @@ pub fn stdout_line(arguments: fmt::Arguments<'_>) -> Result<(), Error> {
 
 pub fn stderr_line(arguments: fmt::Arguments<'_>) {
     let _ = write_line(std::io::stderr().lock(), arguments);
+}
+
+pub fn parse_cli<Cli: clap::Parser>(binary_name: &str) -> Result<Cli, ExitCode> {
+    match Cli::try_parse() {
+        Ok(cli) => Ok(cli),
+        Err(error)
+            if matches!(
+                error.kind(),
+                ErrorKind::DisplayHelp | ErrorKind::DisplayVersion
+            ) =>
+        {
+            Err(if error.print().is_ok() {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::from(2)
+            })
+        }
+        Err(error) if error.kind() == ErrorKind::InvalidSubcommand => {
+            stderr_line(format_args!(
+                "error: unrecognized command '{}'",
+                unrecognized_command_name(&error)
+            ));
+            stderr_line(format_args!("Run '{binary_name} --help' for usage."));
+            Err(ExitCode::from(2))
+        }
+        Err(_) => {
+            stderr_line(format_args!("error: invalid command usage"));
+            stderr_line(format_args!("Run '{binary_name} --help' for usage."));
+            Err(ExitCode::from(2))
+        }
+    }
+}
+
+pub fn render_observed_results(results: &[AuthoredObservedResult]) -> Result<(), Error> {
+    for observed in results {
+        stdout_line(format_args!(
+            "Observed {}: {} to {} {}. Median: {}. Expected: {} to {}.",
+            observed.criterion_id,
+            observed.observed_minimum,
+            observed.observed_maximum,
+            observed.unit,
+            observed.observed_median,
+            observed.expected_minimum,
+            observed.expected_maximum,
+        ))?;
+    }
+    Ok(())
 }
 
 pub fn render_error(context: PublicErrorContext, error: &Error, details: bool) {
@@ -180,6 +231,27 @@ fn output_invalid() -> Error {
         ErrorCode::EvaluationError,
         "Repro It could not write bounded command output.",
     )
+}
+
+// The command name is untrusted. Keep only bounded printable text before output.
+fn unrecognized_command_name(error: &clap::Error) -> String {
+    let name = error
+        .get(ContextKind::InvalidSubcommand)
+        .and_then(|value| match value {
+            ContextValue::String(name) => Some(name.as_str()),
+            _ => None,
+        })
+        .unwrap_or_default();
+    let sanitized: String = name
+        .chars()
+        .filter(|character| character.is_ascii_graphic() && *character != '\'')
+        .take(64)
+        .collect();
+    if sanitized.is_empty() {
+        "unknown".to_owned()
+    } else {
+        sanitized
+    }
 }
 
 #[cfg(test)]

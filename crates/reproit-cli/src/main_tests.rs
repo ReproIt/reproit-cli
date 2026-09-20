@@ -13,28 +13,6 @@ fn repro_list_uses_only_the_discovery_label() {
     assert_eq!(discovery_label(None), "Production discovered");
 }
 
-#[cfg(unix)]
-#[test]
-fn campaign_validator_process_has_a_fixed_deadline() {
-    use std::fs;
-    use std::os::unix::fs::PermissionsExt as _;
-
-    let directory = tempfile::tempdir().unwrap();
-    let program = directory.path().join("blocking-fuzzer");
-    fs::write(&program, b"#!/bin/sh\nsleep 5\n").unwrap();
-    fs::set_permissions(&program, fs::Permissions::from_mode(0o700)).unwrap();
-
-    let error = run_bounded_fuzzer_command(
-        &program,
-        "validate",
-        Path::new("campaign.toml"),
-        Duration::from_millis(50),
-    )
-    .unwrap_err();
-
-    assert_eq!(error.code, ErrorCode::RuntimeQuota);
-}
-
 #[test]
 fn interactive_run_parser_preserves_bounded_arguments() {
     assert_eq!(

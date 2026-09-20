@@ -1,12 +1,4 @@
-use std::{
-    collections::BTreeSet,
-    io::{Read as _, Write as _},
-    path::{Path, PathBuf},
-    process::{Command as ProcessCommand, ExitCode, Stdio},
-    str::FromStr,
-    thread,
-    time::{Duration, Instant},
-};
+use std::{collections::BTreeSet, path::Path, process::ExitCode};
 
 mod capture_detection;
 mod capture_probe;
@@ -17,10 +9,7 @@ mod login_command;
 #[cfg(test)]
 use login_command::select_login_configuration;
 
-use clap::{
-    Args, Parser, Subcommand, ValueEnum,
-    error::{ContextKind, ContextValue, ErrorKind},
-};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use reproit_app::{
     InitializationResult, ProjectStore,
     agent::{
@@ -31,35 +20,23 @@ use reproit_app::{
 };
 use reproit_backend::config::{BackendSdk, ProjectConfig, ProjectSourceConfig, RunSpec};
 use reproit_cli::agent::ProductionAgent;
-use reproit_cli::authored_repro::{
-    AuthoredCheckOutcome, AuthoredObservedResult, check_authored_repro,
-};
+use reproit_cli::authored_repro::{AuthoredCheckOutcome, check_authored_repro};
 use reproit_cli::cloud::HttpCloudClient;
-use reproit_cli::render::{PublicErrorContext, render_error, stderr_line, stdout_line};
+use reproit_cli::render::{
+    PublicErrorContext, parse_cli, render_error, render_observed_results, stdout_line,
+};
 use reproit_cli::{
     FilesystemRepository, NativeCredentialStore, current_git_repository,
     initialization::{InitializationDirectory, InitializationService},
 };
-use reproit_cloud_api::{
-    FuzzCampaignCreate, FuzzCampaignGrant, FuzzCampaignGrantFormat, Priority, ServiceCatalogQuery,
-    Workflow,
-};
-use reproit_core::{
-    Error, ErrorCode, canonical,
-    identity::{FuzzCampaignId, ReproId},
-    model::DiscoverySource,
-};
-use serde::Serialize;
-use time::{Duration as TimeDuration, OffsetDateTime, format_description::well_known::Rfc3339};
-use uuid::Uuid;
+use reproit_cloud_api::{Priority, ServiceCatalogQuery, Workflow};
+use reproit_core::{Error, ErrorCode, identity::ReproId, model::DiscoverySource};
 
 use capture_detection::{ReleasedSdkDeclaration, normalize_startup_run, released_sdk};
 
 const OFFICIAL_CLOUD_ORIGIN: &str = "https://cloud.reproit.com";
 const SERVICE_CATALOG_PAGE_SIZE: u8 = 50;
 const MAX_SERVICE_CATALOG_PAGES: usize = 6;
-const FUZZER_CONTROL_TIMEOUT: Duration = Duration::from_secs(30);
-const MAX_CANONICAL_INTEGER: u64 = 9_007_199_254_740_991;
 
 #[derive(Parser)]
 #[command(
@@ -82,11 +59,6 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Verify and save an authored research experiment.
-    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
-    Add { definition_path: PathBuf },
-    /// Validate or start a local fuzz campaign.
-    Campaign(CampaignArgs),
     /// Sign in through your browser.
     Login,
     /// Connect this Git repository to a service and SDK.
@@ -99,44 +71,12 @@ enum Command {
     Debug { repro_id: ReproId },
     /// Test one Repro or all tracked Repros against the current source.
     Check { repro_id: Option<ReproId> },
-    /// Compare baseline and proposed outputs and save release evidence.
-    Gate(GateArgs),
     /// Check a Repro and keep it as a regression check after it passes.
     Keep { repro_id: ReproId },
     /// Serve Repro operations to coding agents over standard input and output.
     Mcp,
     /// Remove a kept reference and retain its Cloud history.
     Remove { repro_id: ReproId },
-    /// Verify a saved release evidence bundle offline.
-    Verify { bundle_path: PathBuf },
-}
-
-#[derive(Args)]
-struct CampaignArgs {
-    #[command(subcommand)]
-    command: CampaignCommand,
-}
-
-#[derive(Subcommand)]
-enum CampaignCommand {
-    /// Validate a campaign and start the local fuzzer.
-    Create { path: PathBuf },
-    /// Check a campaign file without starting the fuzzer or contacting Cloud.
-    Validate { path: PathBuf },
-}
-
-#[derive(Serialize)]
-struct FuzzerLaunchRequest {
-    campaign_grant: FuzzCampaignGrant,
-    format: &'static str,
-    production_authorization: Option<String>,
-    seed: u64,
-}
-
-#[derive(Args)]
-struct GateArgs {
-    #[arg(long)]
-    config: PathBuf,
 }
 
 #[derive(Args)]
@@ -228,94 +168,17 @@ async fn main() -> ExitCode {
     if go_instrumentation::is_invocation(&arguments) {
         return go_instrumentation::run(&arguments);
     }
-    let cli = match Cli::try_parse() {
+    let cli = match parse_cli::<Cli>("reproit") {
         Ok(cli) => cli,
-        Err(error)
-            if matches!(
-                error.kind(),
-                ErrorKind::DisplayHelp | ErrorKind::DisplayVersion
-            ) =>
-        {
-            return if error.print().is_ok() {
-                ExitCode::SUCCESS
-            } else {
-                ExitCode::from(2)
-            };
-        }
-        // A command parsing failure is not a Repro evaluation failure. It
-        // gets a bounded command error that never echoes unsanitized input.
-        Err(error) if error.kind() == ErrorKind::InvalidSubcommand => {
-            stderr_line(format_args!(
-                "error: unrecognized command '{}'",
-                unrecognized_command_name(&error)
-            ));
-            stderr_line(format_args!("Run 'reproit --help' for usage."));
-            return ExitCode::from(2);
-        }
-        Err(_) => {
-            stderr_line(format_args!("error: invalid command usage"));
-            stderr_line(format_args!("Run 'reproit --help' for usage."));
-            return ExitCode::from(2);
-        }
+        Err(exit) => return exit,
     };
     let details = cli.details;
     let context = PublicErrorContext::from(&cli.command);
-    match &cli.command {
-        Command::Gate(args) => {
-            return release_command_exit(
-                reproit_cli::release_gate::run(&args.config),
-                details,
-                true,
-            );
-        }
-        Command::Verify { bundle_path } => {
-            return release_command_exit(
-                reproit_cli::release_gate::verify(bundle_path),
-                details,
-                false,
-            );
-        }
-        _ => {}
-    }
     match run(cli).await {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             render_error(context, &error, details);
             ExitCode::from(error_exit_code(context, &error))
-        }
-    }
-}
-
-fn release_command_exit(
-    result: Result<reproit_cli::release_gate::ReleaseReport, Error>,
-    details: bool,
-    print_unknown_on_error: bool,
-) -> ExitCode {
-    match result {
-        Ok(report) => {
-            let (label, code) = match report.decision {
-                reproit_experiments::ReleaseDecision::Pass => ("PASS", 0),
-                reproit_experiments::ReleaseDecision::Regression => ("REGRESSION", 1),
-                reproit_experiments::ReleaseDecision::Unknown => ("UNKNOWN", 2),
-            };
-            if stdout_line(format_args!("{label}")).is_err() {
-                return ExitCode::from(2);
-            }
-            if details {
-                report.render_details();
-            } else if code != 0 {
-                stderr_line(format_args!(
-                    "Run with --details to see failed criteria and execution problems."
-                ));
-            }
-            ExitCode::from(code)
-        }
-        Err(error) => {
-            if print_unknown_on_error {
-                let _ = stdout_line(format_args!("UNKNOWN"));
-            }
-            render_error(PublicErrorContext::Release, &error, details);
-            ExitCode::from(2)
         }
     }
 }
@@ -333,18 +196,6 @@ async fn run(cli: Cli) -> Result<(), Error> {
     let mut store = FilesystemRepository::new(root.clone());
     let agent = ProductionAgent::new(root.clone());
     match cli.command {
-        #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
-        Command::Add { definition_path } => {
-            let input = reproit_cli::authored_repro::AddReproInput {
-                definition_path: definition_path.to_string_lossy().into_owned(),
-            };
-            let result = reproit_cli::authored_repro::add_repro(&root, &input)?;
-            stdout_line(format_args!("Added {}.", result.repro_id))?;
-            stdout_line(format_args!("Claim {}.", result.claim_digest))?;
-            print_observed_results(&result.observed_results)?;
-            stdout_line(format_args!("Run '{}'.", result.next_command))
-        }
-        Command::Campaign(args) => campaign_command(args),
         Command::Login => login_command::run().await,
         Command::Init(args) => initialize_command(&root, args).await,
         Command::List(args) => list_command(&agent, args).await,
@@ -357,185 +208,8 @@ async fn run(cli: Cli) -> Result<(), Error> {
         }
         Command::Debug { repro_id } => debug_command(&agent, repro_id).await,
         Command::Check { repro_id } => check_command(&root, &agent, repro_id).await,
-        Command::Gate(_) | Command::Verify { .. } => Err(evaluation_error()),
         Command::Keep { repro_id } => keep_command(&agent, repro_id).await,
         Command::Mcp => reproit_cli::mcp::serve(root).await,
-    }
-}
-
-fn campaign_command(args: CampaignArgs) -> Result<(), Error> {
-    match args.command {
-        CampaignCommand::Validate { path } => {
-            run_fuzzer_command("validate", &path)?;
-            stdout_line(format_args!("The campaign is valid."))
-        }
-        CampaignCommand::Create { path } => create_campaign_command(&path),
-    }
-}
-
-fn create_campaign_command(path: &Path) -> Result<(), Error> {
-    let description = run_fuzzer_command("describe", path)?;
-    let request: FuzzCampaignCreate = canonical::parse_strict(&description)?;
-    let canonical_request = canonical::canonical_bytes(&request)?;
-    if canonical_request != description {
-        return Err(Error::schema_invalid());
-    }
-    let fuzzer_program = fuzzer_program()?;
-    let production_authorization = optional_secret("REPROIT_FUZZ_PRODUCTION_CAPABILITY")?;
-    let mut seed_bytes = [0_u8; 8];
-    getrandom::fill(&mut seed_bytes).map_err(|_| evaluation_error())?;
-    let grant = local_campaign_grant(&request)?;
-    let launch = FuzzerLaunchRequest {
-        campaign_grant: grant,
-        format: "reproit.fuzz-launch.v1",
-        production_authorization,
-        seed: u64::from_le_bytes(seed_bytes) % MAX_CANONICAL_INTEGER,
-    };
-    let launch_bytes = canonical::canonical_bytes(&launch)?;
-    if launch_bytes.len() > 32 * 1_024 {
-        return Err(Error::new(
-            ErrorCode::RuntimeQuota,
-            "The campaign launch request exceeds its byte limit.",
-        ));
-    }
-    let Ok(mut child) = ProcessCommand::new(fuzzer_program)
-        .arg("run")
-        .arg(path)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .spawn()
-    else {
-        return Err(evaluation_error());
-    };
-    let write_result = child
-        .stdin
-        .take()
-        .ok_or_else(evaluation_error)
-        .and_then(|mut stdin| {
-            stdin
-                .write_all(&launch_bytes)
-                .map_err(|_| evaluation_error())
-        });
-    if let Err(error) = write_result {
-        let _ = child.kill();
-        let _ = child.wait();
-        return Err(error);
-    }
-    stdout_line(format_args!("Local fuzz campaign started."))?;
-    stdout_line(format_args!("Local fuzzer process {} started.", child.id()))
-}
-
-fn local_campaign_grant(request: &FuzzCampaignCreate) -> Result<FuzzCampaignGrant, Error> {
-    let now = OffsetDateTime::now_utc() + TimeDuration::hours(24);
-    let seconds = now.unix_timestamp();
-    let milliseconds = now.millisecond();
-    let whole = OffsetDateTime::from_unix_timestamp(seconds).map_err(|_| evaluation_error())?;
-    let whole_text = whole.format(&Rfc3339).map_err(|_| evaluation_error())?;
-    let base = whole_text.strip_suffix('Z').ok_or_else(evaluation_error)?;
-    let expires_at = format!("{base}.{milliseconds:03}Z")
-        .parse()
-        .map_err(|_| evaluation_error())?;
-    let mut key = [0_u8; 32];
-    getrandom::fill(&mut key).map_err(|_| evaluation_error())?;
-    let campaign_id = FuzzCampaignId::from_str(&format!("fc_{}", Uuid::now_v7()))
-        .map_err(|_| evaluation_error())?;
-    Ok(FuzzCampaignGrant {
-        campaign_id,
-        expires_at,
-        format: FuzzCampaignGrantFormat::V1,
-        grant: reproit_core::crypto::encode_base64url(&key),
-        project_id: request.project_id,
-        service_id: request.service_id,
-    })
-}
-
-fn run_fuzzer_command(operation: &str, path: &Path) -> Result<Vec<u8>, Error> {
-    run_bounded_fuzzer_command(&fuzzer_program()?, operation, path, FUZZER_CONTROL_TIMEOUT)
-}
-
-fn run_bounded_fuzzer_command(
-    program: &Path,
-    operation: &str,
-    path: &Path,
-    timeout: Duration,
-) -> Result<Vec<u8>, Error> {
-    if timeout.is_zero() {
-        return Err(fuzzer_control_timeout());
-    }
-    let mut child = ProcessCommand::new(program)
-        .arg(operation)
-        .arg(path)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|_| evaluation_error())?;
-    let stdout = child.stdout.take().ok_or_else(evaluation_error)?;
-    let reader = thread::spawn(move || {
-        let mut output = Vec::new();
-        stdout.take(65_537).read_to_end(&mut output)?;
-        Ok::<_, std::io::Error>(output)
-    });
-    let deadline = Instant::now()
-        .checked_add(timeout)
-        .ok_or_else(fuzzer_control_timeout)?;
-    let status = loop {
-        if let Some(status) = child.try_wait().map_err(|_| evaluation_error())? {
-            break status;
-        }
-        if Instant::now() >= deadline {
-            let _ = child.kill();
-            let _ = child.wait();
-            let _ = reader.join();
-            return Err(fuzzer_control_timeout());
-        }
-        thread::sleep(Duration::from_millis(10));
-    };
-    let mut output = reader
-        .join()
-        .map_err(|_| evaluation_error())?
-        .map_err(|_| evaluation_error())?;
-    if !status.success() || output.len() > 65_536 {
-        return Err(Error::new(
-            ErrorCode::SchemaInvalid,
-            "The campaign file is invalid.",
-        ));
-    }
-    while output.last() == Some(&b'\n') || output.last() == Some(&b'\r') {
-        output.pop();
-    }
-    Ok(output)
-}
-
-fn fuzzer_control_timeout() -> Error {
-    Error::new(
-        ErrorCode::RuntimeQuota,
-        "The campaign validator reached its execution limit.",
-    )
-}
-
-fn fuzzer_program() -> Result<PathBuf, Error> {
-    match std::env::var_os("REPROIT_FUZZER_PATH") {
-        Some(path) if !path.is_empty() => Ok(PathBuf::from(path)),
-        Some(_) => Err(evaluation_error()),
-        None => {
-            let executable = std::env::current_exe().map_err(|_| evaluation_error())?;
-            let name = if cfg!(windows) {
-                "reproit-fuzzer.exe"
-            } else {
-                "reproit-fuzzer"
-            };
-            Ok(executable.parent().ok_or_else(evaluation_error)?.join(name))
-        }
-    }
-}
-
-fn optional_secret(name: &str) -> Result<Option<String>, Error> {
-    match std::env::var(name) {
-        Ok(value) if !value.is_empty() && value.len() <= 16_384 => Ok(Some(value)),
-        Ok(_) | Err(std::env::VarError::NotUnicode(_)) => Err(Error::schema_invalid()),
-        Err(std::env::VarError::NotPresent) => Ok(None),
     }
 }
 
@@ -568,7 +242,7 @@ async fn check_command(
             AuthoredCheckOutcome::Unknown => "UNKNOWN",
         };
         stdout_line(format_args!("{label} {repro_id}"))?;
-        print_observed_results(&result.observed_results)?;
+        render_observed_results(&result.observed_results)?;
         return match result.outcome {
             AuthoredCheckOutcome::Pass => Ok(()),
             AuthoredCheckOutcome::Regression => Err(Error::new(
@@ -622,22 +296,6 @@ async fn check_command(
             ErrorCode::EvaluationError,
             "At least one Repro has an unknown result.",
         ));
-    }
-    Ok(())
-}
-
-fn print_observed_results(results: &[AuthoredObservedResult]) -> Result<(), Error> {
-    for observed in results {
-        stdout_line(format_args!(
-            "Observed {}: {} to {} {}. Median: {}. Expected: {} to {}.",
-            observed.criterion_id,
-            observed.observed_minimum,
-            observed.observed_maximum,
-            observed.unit,
-            observed.observed_median,
-            observed.expected_minimum,
-            observed.expected_maximum,
-        ))?;
     }
     Ok(())
 }
@@ -1166,41 +824,14 @@ fn evaluation_error() -> Error {
     )
 }
 
-/// The echoed command name is attacker-controlled input, so it keeps only
-/// printable ASCII and a bounded length before it reaches the terminal.
-fn unrecognized_command_name(error: &clap::Error) -> String {
-    let name = error
-        .get(ContextKind::InvalidSubcommand)
-        .and_then(|value| match value {
-            ContextValue::String(name) => Some(name.as_str()),
-            _ => None,
-        })
-        .unwrap_or_default();
-    let sanitized: String = name
-        .chars()
-        .filter(|character| character.is_ascii_graphic() && *character != '\'')
-        .take(64)
-        .collect();
-    if sanitized.is_empty() {
-        "unknown".to_owned()
-    } else {
-        sanitized
-    }
-}
-
 impl From<&Command> for PublicErrorContext {
     fn from(command: &Command) -> Self {
         match command {
             Command::Check { .. } => Self::Check,
             Command::Login => Self::Login,
             Command::Init(_) => Self::Init,
-            Command::Campaign(_) | Command::Keep { .. } | Command::List(_) | Command::Triage(_) => {
-                Self::Cloud
-            }
+            Command::Keep { .. } | Command::List(_) | Command::Triage(_) => Self::Cloud,
             Command::Debug { .. } => Self::Source,
-            Command::Gate(_) | Command::Verify { .. } => Self::Release,
-            #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
-            Command::Add { .. } => Self::General,
             Command::Mcp | Command::Remove { .. } => Self::General,
         }
     }

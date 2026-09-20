@@ -4,7 +4,7 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 fn reproit() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_reproit"))
+    Command::new(env!("CARGO_BIN_EXE_reproit-research"))
 }
 
 #[derive(Serialize)]

@@ -1,6 +1,6 @@
 [package]
 name = "reproit-cli"
-description = "Repro It developer command line interface"
+description = "Repro It production and research command-line interfaces"
 edition.workspace = true
 license.workspace = true
 rust-version = "1.94.0"
@@ -10,6 +10,10 @@ publish = false
 [[bin]]
 name = "reproit"
 path = "src/main.rs"
+
+[[bin]]
+name = "reproit-research"
+path = "src/bin/reproit-research.rs"
 
 [dependencies]
 reproit-sdk-platform.workspace = true
@@ -38,8 +42,6 @@ time.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["io-std", "io-util", "signal"] }
 toml.workspace = true
-uuid.workspace = true
-
 [dev-dependencies]
 serde_json.workspace = true
 

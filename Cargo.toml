@@ -31,8 +31,6 @@ tempfile = "=3.27.0"
 time = { version = "=0.3.55", default-features = false, features = ["formatting", "parsing", "serde", "std"] }
 tokio = { version = "=1.53.1", default-features = false, features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 toml = "=1.1.4"
-uuid = { version = "=1.24.0", default-features = false, features = ["serde", "std", "v7"] }
-
 reproit-backend = { git = "https://github.com/ReproIt/reproit-core", rev = "c9cb72f1890fae74ed6650e24824966a4711b47a" }
 reproit-cloud-api = { git = "https://github.com/ReproIt/reproit-core", rev = "c9cb72f1890fae74ed6650e24824966a4711b47a" }
 reproit-core = { git = "https://github.com/ReproIt/reproit-core", rev = "c9cb72f1890fae74ed6650e24824966a4711b47a" }

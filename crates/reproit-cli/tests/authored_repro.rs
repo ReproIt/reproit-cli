@@ -328,7 +328,7 @@ fn changed_claim_bytes_return_an_error() {
 fn cli_and_mcp_add_the_same_repro_and_cli_checks_it() {
     let _guard = authored_test_guard();
     let cli_workspace = Workspace::new("candidate");
-    let cli_add = reproit(cli_workspace.root.path())
+    let cli_add = reproit_research(cli_workspace.root.path())
         .args(["add", "experiment.json"])
         .output()
         .unwrap();
@@ -719,6 +719,12 @@ fn git_output(root: &Path, arguments: &[&str]) -> String {
 
 fn reproit(root: &Path) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_reproit"));
+    command.current_dir(root);
+    command
+}
+
+fn reproit_research(root: &Path) -> Command {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_reproit-research"));
     command.current_dir(root);
     command
 }
