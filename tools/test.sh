@@ -20,6 +20,7 @@ if rg -n 'reproit-(core|backend|cloud-api|worker|experiments)\s*=.*path\s*=' \
   exit 1
 fi
 
+"$repository_root/tools/test-install.sh"
 "$repository_root/tools/with-core.sh" cargo fmt --all -- --check
 "$repository_root/tools/with-core.sh" cargo clippy --workspace --all-targets --all-features -- -D warnings
 "$repository_root/tools/with-core.sh" cargo test --workspace --all-targets

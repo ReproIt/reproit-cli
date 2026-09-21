@@ -5,11 +5,29 @@ checks.
 
 ## Install
 
-Install the signed `reproit` executable from your Repro It release bundle.
-Verify its checksum before you run it.
+Choose one installation method.
 
-See [Install Repro It](docs/install.md) for Linux, macOS, Windows, and source
-build instructions.
+### Run the installer
+
+```sh
+git clone https://github.com/ReproIt/reproit-cli.git
+cd reproit-cli
+./install.sh
+```
+
+Windows users can run `.\install.ps1` from PowerShell. See
+[Install Repro It](docs/install.md) for requirements and login configuration.
+
+### Build from source
+
+```sh
+git clone https://github.com/ReproIt/reproit-cli.git
+cd reproit-cli
+cargo build --locked --release --package reproit-cli --bin reproit
+```
+
+The executable is at `target/release/reproit` on Linux and macOS. Windows uses
+`target\release\reproit.exe`.
 
 ## Connect an application
 
@@ -50,8 +68,7 @@ Failure still occurs. `UNKNOWN` means that the evidence cannot support a
 decision. `ERROR` means that Repro It could not complete or verify the
 operation.
 
-`reproit mcp` serves MCP through standard input and standard output. It uses the
-same login, authorization, and application operations as the human commands.
+`reproit mcp` serves MCP through standard input and standard output.
 
 Read the [quick start](docs/quick-start.md) for the full bug-fix loop. Use the
 [command reference](docs/commands.md) for options and exit codes.

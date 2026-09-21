@@ -1,64 +1,59 @@
 # Install Repro It
 
-Install `reproit` on Linux, macOS, or Windows from the signed release bundle.
-Use a source build only for CLI development.
+## Requirements
 
-## Verify a release bundle
+Install Git and the Rust toolchain from [rustup.rs](https://rustup.rs). Your Git
+credentials must have access to the pinned Repro It dependencies.
 
-1. Download the bundle for your operating system and architecture.
-2. Download the checksum manifest from the same release.
-3. Calculate the SHA-256 checksum for the bundle.
-4. Confirm that it matches the manifest.
-5. Extract the bundle.
-6. Put the `reproit` executable in a directory on `PATH`.
-7. Run `reproit --version`.
+The installer uses `Cargo.lock`. It installs only the `reproit` executable.
 
-Do not run an executable when its checksum does not match.
+## Run the installer
 
-## Linux and macOS
+### Linux and macOS
 
-The release bundle contains one `reproit` executable.
-
-```sh
-shasum -a 256 reproit-cli-*.tar.gz
-tar -xzf reproit-cli-*.tar.gz
-install -m 0755 reproit "$HOME/.local/bin/reproit"
-reproit --version
-```
-
-Use another user-owned directory on `PATH` when `$HOME/.local/bin` is not
-available.
-
-## Windows
-
-Open PowerShell in the directory that contains the release bundle.
-
-```powershell
-Get-FileHash .\reproit-cli-*.zip -Algorithm SHA256
-Expand-Archive .\reproit-cli-*.zip -DestinationPath .\reproit-cli
-.\reproit-cli\reproit.exe --version
-```
-
-Move `reproit.exe` to a user-owned directory on `PATH` after the checksum
-matches.
-
-## Build from source
-
-Install Git and the Rust version in `rust-toolchain.toml`. Clone this repository
-into a normal project directory. Do not build it directly in your home
-directory.
+Run:
 
 ```sh
 git clone https://github.com/ReproIt/reproit-cli.git
 cd reproit-cli
-cargo install --locked --path crates/reproit-cli
+./install.sh
+reproit --version
 ```
 
-The source build does not contain official OAuth metadata. It cannot replace a
-signed production release for normal login.
+Cargo installs the executable in `$CARGO_HOME/bin`. The default location is
+`$HOME/.cargo/bin`. Add that directory to `PATH` when necessary.
 
-For an authorized test service, set `REPROIT_AUTHORITY` and
-`REPROIT_CLI_CLIENT_ID` together before you run `reproit login`. Get the public
-OAuth authority and client ID from that service's operator. The command uses
-the normal browser login and stores the session in the native credential store.
+### Windows
+
+Run these commands in PowerShell:
+
+```powershell
+git clone https://github.com/ReproIt/reproit-cli.git
+cd reproit-cli
+.\install.ps1
+reproit --version
+```
+
+Cargo installs the executable in `$env:CARGO_HOME\bin`. The default location is
+`$env:USERPROFILE\.cargo\bin`. Add that directory to `PATH` when necessary.
+
+## Build from source
+
+Run:
+
+```sh
+git clone https://github.com/ReproIt/reproit-cli.git
+cd reproit-cli
+cargo build --locked --release --package reproit-cli --bin reproit
+```
+
+The executable is at `target/release/reproit` on Linux and macOS. Windows uses
+`target\release\reproit.exe`.
+
+## Login configuration
+
+A source build does not contain the official OAuth metadata. For an authorized
+test service, set `REPROIT_AUTHORITY` and `REPROIT_CLI_CLIENT_ID` before login.
+Get the public OAuth authority and client ID from the service operator.
+
 Do not use a client secret as the client ID.
